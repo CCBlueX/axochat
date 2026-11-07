@@ -12,6 +12,7 @@ use history::History;
 
 use crate::config::Config;
 use crate::entity::punishment::Kind as PunishmentKind;
+use crate::entity::user;
 use crate::error::*;
 use log::*;
 
@@ -68,6 +69,8 @@ pub struct ChatServer {
     store: Addr<Store>,
     config: Config,
     history: History,
+    /// The reports of the last hour, for the rate limit.
+    recent_reports: Vec<RecentReport>,
 
     current_internal_user_id: u64,
 }
@@ -87,6 +90,7 @@ impl ChatServer {
             store,
             config,
             history: History::new(),
+            recent_reports: Vec::new(),
 
             current_internal_user_id: 0,
         }
@@ -300,6 +304,13 @@ enum Kind {
     Mojang,
 }
 
+struct RecentReport {
+    at: i64,
+    reporter: Uuid,
+    target: Uuid,
+    message: Option<u64>,
+}
+
 #[derive(Message)]
 #[rtype(result = "()")]
 struct Disconnect {
@@ -371,6 +382,12 @@ enum ClientPacket {
         user: UserRef,
         punishments: Vec<PunishmentView>,
     },
+    ReportCreated {
+        report: ReportView,
+    },
+    Reports {
+        reports: Vec<ReportView>,
+    },
 }
 
 #[derive(Serialize, Clone)]
@@ -378,6 +395,29 @@ struct UserRef {
     id: Uuid,
     kind: Kind,
     name: String,
+}
+
+impl From<&user::Model> for UserRef {
+    fn from(model: &user::Model) -> UserRef {
+        UserRef {
+            id: model.id,
+            kind: if model.account.is_some() { Kind::Account } else { Kind::Mojang },
+            name: model.name.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
+struct ReportView {
+    id: Uuid,
+    reporter: UserRef,
+    target: UserRef,
+    /// Where the reported message went, as the target saw it.
+    channel: Option<Channel>,
+    message: Option<u64>,
+    content: Option<String>,
+    reason: String,
+    time: i64,
 }
 
 #[derive(Serialize, Clone)]
@@ -445,6 +485,14 @@ enum ServerPacket {
     },
     Pardon { user: Option<String>, ip: Option<String> },
     RequestPunishments { user: String },
+    Report {
+        /// An id or a name.
+        user: String,
+        message: Option<u64>,
+        reason: String,
+    },
+    RequestReports,
+    ResolveReport { id: Uuid },
 }
 
 #[derive(Message)]
@@ -471,11 +519,14 @@ enum SuccessReason {
     Minecraft,
     Punish,
     Pardon,
+    Report,
+    Resolve,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientError, ClientPacket, PunishmentKind, ServerPacket};
+    use super::{Channel, ClientError, ClientPacket, Kind, PunishmentKind, ReportView, ServerPacket, UserRef};
+    use uuid::Uuid;
 
     #[test]
     fn moderation_wire_form() {
@@ -489,6 +540,38 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&punished).unwrap(),
             r#"{"m":"Punished","c":{"kind":"ban","reason":"spam","expires":null}}"#
+        );
+    }
+
+    #[test]
+    fn report_wire_form() {
+        let report = r#"{"m":"Report","c":{"user":"Notch","message":7,"reason":"spam"}}"#;
+        let Ok(ServerPacket::Report { user, message, reason }) = serde_json::from_str(report) else {
+            panic!("could not decode Report");
+        };
+        assert_eq!((user.as_str(), message, reason.as_str()), ("Notch", Some(7), "spam"));
+        let without = r#"{"m":"Report","c":{"user":"Notch","reason":"spam"}}"#;
+        assert!(matches!(serde_json::from_str(without), Ok(ServerPacket::Report { message: None, .. })));
+
+        let user = |name: &str| UserRef { id: Uuid::nil(), kind: Kind::Account, name: name.into() };
+        let created = ClientPacket::ReportCreated {
+            report: ReportView {
+                id: Uuid::nil(),
+                reporter: user("jeb_"),
+                target: user("Notch"),
+                channel: Some(Channel::Global),
+                message: Some(7),
+                content: Some("hi".into()),
+                reason: "spam".into(),
+                time: 1,
+            },
+        };
+        let nil = Uuid::nil();
+        assert_eq!(
+            serde_json::to_string(&created).unwrap(),
+            format!(
+                r#"{{"m":"ReportCreated","c":{{"report":{{"id":"{nil}","reporter":{{"id":"{nil}","kind":"account","name":"jeb_"}},"target":{{"id":"{nil}","kind":"account","name":"Notch"}},"channel":{{"type":"global"}},"message":7,"content":"hi","reason":"spam","time":1}}}}}}"#
+            )
         );
     }
 

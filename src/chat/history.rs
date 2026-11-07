@@ -5,7 +5,8 @@ use uuid::Uuid;
 
 const CAPACITY: usize = 1000;
 
-/// The recent messages of this server run; ids count up from 1 with every start.
+/// The recent messages of this server run; ids start at the current time in milliseconds,
+/// so they keep growing across restarts.
 pub struct History {
     messages: VecDeque<Recorded>,
     next_id: u64,
@@ -15,9 +16,9 @@ pub struct Recorded {
     id: u64,
     time: i64,
     /// The id in the database.
-    author: Uuid,
-    audience: Audience,
-    content: String,
+    pub author: Uuid,
+    pub audience: Audience,
+    pub content: String,
 }
 
 #[derive(Clone, Copy)]
@@ -30,7 +31,7 @@ impl History {
     pub fn new() -> History {
         History {
             messages: VecDeque::with_capacity(CAPACITY),
-            next_id: 1,
+            next_id: now_ms() as u64,
         }
     }
 
@@ -47,6 +48,20 @@ impl History {
         });
         self.next_id += 1;
         self.messages.back().expect("just recorded")
+    }
+
+    pub fn get(&self, id: u64) -> Option<&Recorded> {
+        let first = self.messages.front()?.id;
+        self.messages.get(usize::try_from(id.checked_sub(first)?).ok()?)
+    }
+}
+
+impl Audience {
+    pub fn reaches(&self, user: Uuid) -> bool {
+        match self {
+            Audience::Global => true,
+            Audience::Direct { receiver } => *receiver == user,
+        }
     }
 }
 

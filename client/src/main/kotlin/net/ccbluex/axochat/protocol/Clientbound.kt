@@ -10,6 +10,7 @@ import kotlinx.serialization.json.contentOrNull
 import net.ccbluex.axochat.user.Author
 import net.ccbluex.axochat.user.LegacyUser
 import net.ccbluex.axochat.user.Punishment
+import net.ccbluex.axochat.user.ReportView
 import net.ccbluex.axochat.user.UserRef
 
 public sealed interface Clientbound {
@@ -98,6 +99,20 @@ public sealed interface Clientbound {
     @Serializable
     @SerialName("Punishments")
     public data class Punishments(val user: UserRef, val punishments: List<Punishment>) : Clientbound
+
+    /**
+     * Sent to staff for every new report.
+     */
+    @Serializable
+    @SerialName("ReportCreated")
+    public data class ReportCreated(val report: ReportView) : Clientbound
+
+    /**
+     * The latest unresolved reports, newest first.
+     */
+    @Serializable
+    @SerialName("Reports")
+    public data class Reports(val reports: List<ReportView>) : Clientbound
 
     public data class Unknown(val name: String, val content: JsonElement?) : Clientbound
 }

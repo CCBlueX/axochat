@@ -45,6 +45,8 @@ public value class SuccessReason(public val name: String) {
         public val Minecraft: SuccessReason = SuccessReason("Minecraft")
         public val Punish: SuccessReason = SuccessReason("Punish")
         public val Pardon: SuccessReason = SuccessReason("Pardon")
+        public val Report: SuccessReason = SuccessReason("Report")
+        public val Resolve: SuccessReason = SuccessReason("Resolve")
     }
 }
 

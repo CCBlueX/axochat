@@ -100,7 +100,7 @@ A message in a [channel](#channels), sent instead of [Message](#message) and [Pr
 to clients after a [handshake](#handshake).
 
 - `channel` is where the message went, as the receiver sees it.
-- `id` identifies the message; ids grow with every message until the server restarts.
+- `id` identifies the message; ids grow with every message, also across server restarts.
 - `time` is when the server got the message, in milliseconds since the Unix epoch.
 - `author` is the sender, as `user` in [Welcome](#welcome).
 - `content` is the message, see [Message](#message).
@@ -303,10 +303,65 @@ The answer to [RequestPunishments](#requestpunishments).
 }
 ```
 
+### ReportCreated
+Sent to staff after a [handshake](#handshake) for every new [Report](#report).
+
+- `report` is the report:
+  - `id` of the report.
+  - `reporter` and `target` are the `id`, `kind` and `name` of the users.
+  - `channel` is where the reported message went, as the target saw it; for a direct message its `user` is the reporter.
+    `null` without a message.
+  - `message` and `content` are the id and the text of the reported message, `null` without one.
+  - `reason` is the reason the reporter gave.
+  - `time` is when it was reported, in milliseconds since the Unix epoch.
+
+**Example**
+```json
+{
+    "m": "ReportCreated",
+    "c": {
+        "report": {
+            "id": "019a5c1e-2b3d-7e4f-8a9b-0c1d2e3f4a5b",
+            "reporter": {
+                "id": "0190c3a2-6a7b-7c8d-9e0f-a1b2c3d4e5f6",
+                "kind": "account",
+                "name": "jeb_"
+            },
+            "target": {
+                "id": "0190c3a2-5f1e-7c4b-9d2a-1b3c4d5e6f70",
+                "kind": "account",
+                "name": "Notch"
+            },
+            "channel": { "type": "global" },
+            "message": 4182,
+            "content": "Hello, User!",
+            "reason": "Spam",
+            "time": 1791446400000
+        }
+    }
+}
+```
+
+### Reports
+The answer to [RequestReports](#requestreports).
+
+- `reports` are the latest 50 unresolved reports, newest first, each as `report` in [ReportCreated](#reportcreated).
+
+**Example**
+```json
+{
+    "m": "Reports",
+    "c": {
+        "reports": []
+    }
+}
+```
+
 ### Success
 This packet is sent after either
 [LoginMojang](#loginmojang), [LoginJWT](#loginjwt), [LoginAccount](#loginaccount),
-[BanUser](#banuser), [UnbanUser](#unbanuser), [Punish](#punish) or [Pardon](#pardon)
+[BanUser](#banuser), [UnbanUser](#unbanuser), [Punish](#punish), [Pardon](#pardon),
+[Report](#report) or [ResolveReport](#resolvereport)
 were processed successfully.
 
 - `reason` is the reason for the success; it is one of the following possible
@@ -317,6 +372,8 @@ were processed successfully.
   - `Minecraft` after a [Minecraft proof](#minecraft-proof)
   - `Punish`
   - `Pardon`
+  - `Report`
+  - `Resolve`
 
 **Example**
 ```json
@@ -575,6 +632,29 @@ Users the punishment covers get [Punished](#punished).
 }
 ```
 
+### Report
+Reports a user to staff, who get [ReportCreated](#reportcreated). Reports never punish by themselves.
+The answer is [Success](#success) with `Report`, also when nobody matches `user` and when the same report
+was already made; `NotPermitted` for reporting oneself; `InvalidId` if `message` is not a message of `user`
+the reporter received; `RateLimited` after 10 reports within an hour.
+
+- `user` is the id or name of the reported user.
+- `message` is optional: the `id` of a [ChatMessage](#chatmessage) of the user that the reporter received,
+  from this server run and among the last 1000 messages.
+- `reason` is at most 256 characters.
+
+**Example**
+```json
+{
+    "m": "Report",
+    "c": {
+        "user": "Notch",
+        "message": 4182,
+        "reason": "Spam"
+    }
+}
+```
+
 ### RequestJWT
 To login using [LoginJWT](#loginjwt), a client needs to own a json web token.
 This token can be retrieved by sending `RequestJWT` as an already authenticated
@@ -620,6 +700,17 @@ The answer is [Punishments](#punishments), or `UnknownUser`.
 }
 ```
 
+### RequestReports
+Staff can send this packet to get [Reports](#reports).
+This packet has no body.
+
+**Example**
+```json
+{
+    "m": "RequestReports"
+}
+```
+
 ### RequestUserCount
 After receiving this packet, the server will then send a [UserCount](#usercount)
 packet to the client.
@@ -630,6 +721,22 @@ This packet has no body.
 ```json
 {
     "m": "RequestUserCount"
+}
+```
+
+### ResolveReport
+Staff can send this packet to take a report off [Reports](#reports).
+The answer is [Success](#success) with `Resolve`.
+
+- `id` of the report.
+
+**Example**
+```json
+{
+    "m": "ResolveReport",
+    "c": {
+        "id": "019a5c1e-2b3d-7e4f-8a9b-0c1d2e3f4a5b"
+    }
 }
 ```
 

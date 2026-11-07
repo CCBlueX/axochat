@@ -1,10 +1,10 @@
-use crate::entity::{punishment, user};
+use crate::entity::{punishment, report, user};
 use log::*;
 
 use actix::prelude::*;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
     TransactionTrait,
 };
 use std::net::IpAddr;
@@ -178,6 +178,8 @@ pub enum Write {
     Punish(punishment::Model),
     Revoke { ids: Vec<Uuid>, by: Option<Uuid>, at: i64 },
     ForgetIps { seen_before: i64 },
+    Report(report::Model),
+    ResolveReport { id: Uuid, by: Uuid, at: i64 },
 }
 
 const ATTEMPTS: u32 = 3;
@@ -224,6 +226,25 @@ async fn apply(db: &DatabaseConnection, writes: &[Write]) -> Result<(), DbErr> {
                     .exec(&txn)
                     .await?;
             }
+            Write::Report(model) => {
+                // reporting the same message twice changes nothing
+                report::Entity::insert(report::ActiveModel::from(model))
+                    .on_conflict_do_nothing_on([
+                        report::Column::ReporterId,
+                        report::Column::TargetId,
+                        report::Column::MessageId,
+                    ])
+                    .exec_without_returning(&txn)
+                    .await?;
+            }
+            Write::ResolveReport { id, by, at } => {
+                report::Entity::update_many()
+                    .col_expr(report::Column::ResolvedBy, Expr::value(by))
+                    .col_expr(report::Column::ResolvedAt, Expr::value(at))
+                    .filter(report::Column::Id.eq(id))
+                    .exec(&txn)
+                    .await?;
+            }
         }
     }
     txn.commit().await
@@ -249,6 +270,31 @@ impl Handler<LoadPunishments> for Store {
                 )
                 .all(&db)
                 .await
+        })
+    }
+}
+
+/// The latest unresolved reports with the users they name.
+#[derive(Message)]
+#[rtype(result = "Result<(Vec<report::Model>, Vec<user::Model>), DbErr>")]
+pub struct LoadReports {
+    pub limit: u64,
+}
+
+impl Handler<LoadReports> for Store {
+    type Result = AtomicResponse<Self, Result<(Vec<report::Model>, Vec<user::Model>), DbErr>>;
+
+    fn handle(&mut self, msg: LoadReports, _ctx: &mut Context<Self>) -> Self::Result {
+        atomic!(self, db => {
+            let reports = report::Entity::find()
+                .filter(report::Column::ResolvedAt.is_null())
+                .order_by_desc(report::Column::CreatedAt)
+                .limit(msg.limit)
+                .all(&db)
+                .await?;
+            let ids: Vec<Uuid> = reports.iter().flat_map(|report| [report.reporter_id, report.target_id]).collect();
+            let users = user::Entity::find().filter(user::Column::Id.is_in(ids)).all(&db).await?;
+            Ok((reports, users))
         })
     }
 }

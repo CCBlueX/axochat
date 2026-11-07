@@ -20,9 +20,9 @@ pub(super) enum Target {
     Nobody,
 }
 
-/// A user found by staff, who may be offline.
-struct Found {
-    user: UserRef,
+/// A user found by id or name, who may be offline.
+pub(super) struct Found {
+    pub user: UserRef,
     last_ip: Option<IpAddr>,
     staff: bool,
 }
@@ -171,8 +171,20 @@ impl ChatServer {
     where
         F: FnOnce(&mut ChatServer, Found) + 'static,
     {
+        let unknown = query.clone();
+        self.look_up_user(ctx, user_id, query, move |actor, found| match found {
+            Some(found) => then(actor, found),
+            None => actor.send_error(user_id, ClientError::UnknownUser(unknown)),
+        });
+    }
+
+    /// Finds a user by id or name, online ones first; answers `Internal` when the database fails.
+    pub(super) fn look_up_user<F>(&mut self, ctx: &mut Context<Self>, user_id: InternalId, query: String, then: F)
+    where
+        F: FnOnce(&mut ChatServer, Option<Found>) + 'static,
+    {
         if let Some(found) = self.find_online(&query) {
-            then(self, found);
+            then(self, Some(found));
             return;
         }
 
@@ -181,22 +193,18 @@ impl ChatServer {
         ctx.spawn(async move { store.send(find).await }.into_actor(self).map(move |result, actor, _ctx| {
             let model = match result {
                 Ok(Ok(Some(model))) => model,
-                Ok(Ok(None)) => return actor.send_error(user_id, ClientError::UnknownUser(query)),
+                Ok(Ok(None)) => return then(actor, None),
                 _ => {
                     error!("Could not look up user `{}`", query);
                     return actor.send_error(user_id, ClientError::Internal);
                 }
             };
             let found = Found {
-                user: UserRef {
-                    id: model.id,
-                    kind: if model.account.is_some() { UserKind::Account } else { UserKind::Mojang },
-                    name: model.name,
-                },
+                user: UserRef::from(&model),
                 last_ip: model.last_ip.and_then(|ip| ip.parse().ok()),
                 staff: actor.users.get(&model.id).is_some_and(|user| actor.has_staff_role(&user.roles)),
             };
-            then(actor, found);
+            then(actor, Some(found));
         }));
     }
 
