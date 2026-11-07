@@ -19,6 +19,8 @@ pub(super) struct Verified {
     pub model: user::Model,
     pub roles: Vec<String>,
     pub minecraft: Option<UserInfo>,
+    /// Logged in with the service token.
+    pub service: bool,
 }
 
 /// Taken before the login goes async.
@@ -38,7 +40,7 @@ impl Visit {
             key,
             name: name.chars().take(64).collect(),
             linked,
-            ip: self.ip,
+            ip: Some(self.ip),
             id: self.id,
             at: self.at,
         }
@@ -76,7 +78,8 @@ impl ChatServer {
         };
 
         let model = &verified.model;
-        let banned = !self.has_staff_role(&verified.roles)
+        let banned = !verified.service
+            && !self.has_staff_role(&verified.roles)
             && self
                 .moderation
                 .find(punishment::Kind::Ban, Some(model.id), Some(session.ip), now_ms())
@@ -100,6 +103,7 @@ impl ChatServer {
             connections: HashSet::new(),
             kind,
             roles: Vec::new(),
+            service: verified.service,
         });
         online.connections.insert(user_id);
         online.roles = verified.roles;
@@ -139,7 +143,7 @@ pub(super) async fn login_minecraft(
         None => (visit.identify(IdentityKey::Minecraft(player.uuid), player.name.clone(), None), Vec::new()),
     };
     let model = identify(store, request).await?;
-    Ok(Verified { model, roles, minecraft: Some(player) })
+    Ok(Verified { model, roles, minecraft: Some(player), service: false })
 }
 
 pub(super) async fn identify(store: Addr<Store>, request: Identify) -> Result<user::Model, ClientError> {
@@ -158,7 +162,7 @@ pub(super) async fn identify(store: Addr<Store>, request: Identify) -> Result<us
 
 /// Nicknames are free text: formatting codes, invisible and direction-changing characters go, and
 /// whitespace becomes `_` so the name can be addressed.
-fn account_name(nickname: &str, account: &str) -> String {
+pub(super) fn account_name(nickname: &str, account: &str) -> String {
     let mut name = String::new();
     let mut gap = false;
     for ch in nickname.chars() {

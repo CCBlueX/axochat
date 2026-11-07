@@ -1,11 +1,20 @@
+use super::login::{account_name, identify};
 use super::{ChatServer, ClientPacket};
+use crate::api::{Api, ApiError};
 use crate::auth::UserInfo;
 use crate::chat::history::Audience;
-use crate::chat::{now_ms, send_message, Author, InternalId, Kind as UserKind, Target};
-use crate::entity::punishment::Kind;
-
+use crate::chat::{
+    new_id, now_ms, send_message, Author, InternalId, Kind as UserKind, Relayed, Target, ROLE_REFRESH,
+};
+use crate::entity::{punishment::Kind, user};
 use crate::error::*;
+use crate::message::RateLimiter;
+use crate::store::{Identify, IdentityKey, Store};
 use log::*;
+
+use actix::*;
+use std::sync::Arc;
+use std::time::Instant;
 use uuid::Uuid;
 
 /// A logged in user allowed to send a message.
@@ -159,6 +168,113 @@ impl ChatServer {
         })
     }
 
+    /// A service session sending a message for a LiquidBounce Account, which then counts as that account's.
+    pub(super) fn handle_message_for(
+        &mut self,
+        user_id: InternalId,
+        channel: Target,
+        content: String,
+        account: String,
+        ctx: &mut Context<Self>,
+    ) {
+        let Some(user) = self.online_user(user_id) else {
+            self.send_error(user_id, ClientError::NotLoggedIn);
+            return;
+        };
+        if !user.service {
+            self.send_error_for(user_id, ClientError::NotPermitted, &account);
+            return;
+        }
+        if let Target::Direct(_) | Target::Unknown(_) = channel {
+            self.send_error_for(user_id, ClientError::UnknownChannel(account.clone()), &account);
+            return;
+        }
+
+        let fresh = self
+            .relayed
+            .iter()
+            .find(|(_, relayed)| relayed.account == account && relayed.fetched_at.elapsed() < ROLE_REFRESH)
+            .map(|(id, _)| *id);
+        if let Some(id) = fresh {
+            self.send_for(user_id, id, &account, content);
+            return;
+        }
+
+        let lookup = account_user(self.api.clone(), self.store.clone(), account.clone(), new_id(&mut self.rng), now_ms());
+        ctx.spawn(lookup.into_actor(self).map(move |result, actor, _ctx| match result {
+            Ok((model, roles)) => {
+                let legacy = UserInfo {
+                    name: model.name.clone(),
+                    uuid: model.minecraft_uuid.or(model.linked_minecraft_uuid).unwrap_or_else(Uuid::nil),
+                };
+                let message_config = &actor.config.message;
+                let relayed = actor.relayed.entry(model.id).or_insert_with(|| Relayed {
+                    account: account.clone(),
+                    legacy: legacy.clone(),
+                    roles: Vec::new(),
+                    rate_limiter: RateLimiter::new(message_config.clone()),
+                    fetched_at: Instant::now(),
+                });
+                relayed.legacy = legacy;
+                relayed.roles = roles;
+                relayed.fetched_at = Instant::now();
+                actor.send_for(user_id, model.id, &account, content);
+            }
+            Err(error) => actor.send_error_for(user_id, error, &account),
+        }));
+    }
+
+    fn send_for(&mut self, user_id: InternalId, id: Uuid, account: &str, content: String) {
+        match self.check_message_for(id, &content) {
+            Ok(sender) => self.send_global(user_id, sender, content),
+            Err(error) => {
+                info!("Message of `{}` for `{}` was refused: {}", user_id, account, error);
+                self.send_error_for(user_id, error, account);
+            }
+        }
+    }
+
+    /// The checks of [ChatServer::check_message] for an account a service session sends for.
+    fn check_message_for(&mut self, id: Uuid, content: &str) -> std::result::Result<Sender, ClientError> {
+        let relayed = self.relayed.get(&id).ok_or(ClientError::Internal)?;
+        let roles = relayed.roles.clone();
+        let legacy = relayed.legacy.clone();
+        let (staff, perks) = (self.has_staff_role(&roles), self.has_perk_role(&roles));
+        let now = now_ms();
+        if !staff && self.moderation.find(Kind::Ban, Some(id), None, now).is_some() {
+            return Err(ClientError::Banned);
+        }
+
+        let rate_limiter = match self.users.get_mut(&id) {
+            Some(online) => &mut online.rate_limiter,
+            None => &mut self.relayed.get_mut(&id).ok_or(ClientError::Internal)?.rate_limiter,
+        };
+        if rate_limiter.check_new_message(content.to_owned()) {
+            return Err(ClientError::RateLimited);
+        }
+        self.validator.validate(content, perks).map_err(|err| match err {
+            Error::AxoChat { source } => source,
+            _ => ClientError::Internal,
+        })?;
+        if !staff && self.moderation.find(Kind::Mute, Some(id), None, now).is_some() {
+            return Err(ClientError::Muted);
+        }
+
+        Ok(Sender {
+            id,
+            author: Author {
+                id,
+                kind: UserKind::Account,
+                name: legacy.name.clone(),
+                uuid: legacy.uuid,
+                minecraft: None,
+                roles: self.role_views(&roles),
+                highlight: perks,
+            },
+            legacy,
+        })
+    }
+
     fn check_ratelimit(&mut self, user_id: InternalId, message: String) -> bool {
         let Some(stored_id) = self.connections.get(&user_id).and_then(|session| session.stored_id) else {
             return false;
@@ -172,4 +288,33 @@ impl ChatServer {
             false
         }
     }
+}
+
+/// The user of a LiquidBounce Account, created like on its first login, and its roles.
+async fn account_user(
+    api: Arc<Api>,
+    store: Addr<Store>,
+    account: String,
+    id: Uuid,
+    at: i64,
+) -> std::result::Result<(user::Model, Vec<String>), ClientError> {
+    let unavailable = |err: ApiError| {
+        warn!("Could not look up account `{}`: {}", account, err);
+        ClientError::Internal
+    };
+    let profile = api
+        .profile(&account)
+        .await
+        .map_err(unavailable)?
+        .ok_or_else(|| ClientError::UnknownUser(account.clone()))?;
+    let roles = api.account_roles(&account).await.map_err(unavailable)?;
+    let request = Identify {
+        key: IdentityKey::Account(account.clone()),
+        name: account_name(&profile.nickname, &account),
+        linked: None,
+        ip: None,
+        id,
+        at,
+    };
+    Ok((identify(store, request).await?, roles))
 }
