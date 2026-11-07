@@ -106,6 +106,8 @@ pub enum ClientError {
     InvalidCharacter(char),
     InvalidId,
     AccountRequired,
+    Muted,
+    UnknownUser(String),
     UnknownChannel(String),
     InvalidPacket(String),
     Internal,
@@ -132,6 +134,8 @@ impl ClientError {
             InvalidCharacter(_) => "InvalidCharacter",
             InvalidId => "InvalidId",
             AccountRequired => "AccountRequired",
+            Muted => "Muted",
+            UnknownUser(_) => "UnknownUser",
             UnknownChannel(_) => "UnknownChannel",
             InvalidPacket(_) => "InvalidPacket",
             Internal => "Internal",
@@ -141,7 +145,7 @@ impl ClientError {
     pub fn detail(&self) -> Option<String> {
         match self {
             ClientError::InvalidCharacter(ch) => Some(ch.to_string()),
-            ClientError::UnknownChannel(detail) | ClientError::InvalidPacket(detail) => Some(detail.clone()),
+            ClientError::UnknownUser(detail) | ClientError::UnknownChannel(detail) | ClientError::InvalidPacket(detail) => Some(detail.clone()),
             _ => None,
         }
     }
@@ -173,6 +177,8 @@ impl fmt::Display for ClientError {
             ),
             InvalidId => write!(f, "invalid id"),
             AccountRequired => write!(f, "a LiquidBounce Account is required"),
+            Muted => write!(f, "muted"),
+            UnknownUser(user) => write!(f, "unknown user `{}`", user),
             UnknownChannel(channel) => write!(f, "unknown channel `{}`", channel),
             InvalidPacket(reason) => write!(f, "invalid packet: {}", reason),
             Internal => write!(f, "internal error"),

@@ -4,6 +4,7 @@ package net.ccbluex.axochat.user
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
+import net.ccbluex.axochat.protocol.PunishmentKind
 import net.ccbluex.axochat.protocol.UuidSerializer
 import java.util.UUID
 
@@ -52,3 +53,23 @@ public data class Author(
  */
 @Serializable
 public data class LegacyUser(val name: String, val uuid: UUID)
+
+@Serializable
+public data class UserRef(val id: String, val kind: UserKind, val name: String)
+
+/**
+ * @param ip the range it also covers
+ * @param issuedBy the id of the staff member
+ * @param created milliseconds since the Unix epoch
+ * @param expires milliseconds since the Unix epoch, null if permanent
+ */
+@Serializable
+public data class Punishment(
+    val id: String,
+    val kind: PunishmentKind,
+    val ip: String? = null,
+    val reason: String,
+    val issuedBy: String? = null,
+    val created: Long,
+    val expires: Long? = null,
+)

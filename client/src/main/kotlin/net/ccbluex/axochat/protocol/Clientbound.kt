@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import net.ccbluex.axochat.user.Author
 import net.ccbluex.axochat.user.LegacyUser
+import net.ccbluex.axochat.user.Punishment
+import net.ccbluex.axochat.user.UserRef
 
 public sealed interface Clientbound {
 
@@ -83,6 +85,19 @@ public sealed interface Clientbound {
         val author: Author,
         val content: String,
     ) : Clientbound
+
+    /**
+     * The receiver was just punished; a ban also ends the login.
+     *
+     * @param expires milliseconds since the Unix epoch, null if permanent
+     */
+    @Serializable
+    @SerialName("Punished")
+    public data class Punished(val kind: PunishmentKind, val reason: String, val expires: Long? = null) : Clientbound
+
+    @Serializable
+    @SerialName("Punishments")
+    public data class Punishments(val user: UserRef, val punishments: List<Punishment>) : Clientbound
 
     public data class Unknown(val name: String, val content: JsonElement?) : Clientbound
 }

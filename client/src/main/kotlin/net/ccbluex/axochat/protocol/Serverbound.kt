@@ -71,6 +71,37 @@ public sealed interface Serverbound {
     public data class UnbanUser(val user: UUID) : Serverbound
 
     /**
+     * Staff only. Punishes [user] (an id or a name, also offline) or else the [ip] range.
+     *
+     * @param duration in seconds, permanent without
+     * @param includeIp also covers the last address of [user]
+     */
+    @Serializable
+    @SerialName("Punish")
+    public data class Punish(
+        val user: String? = null,
+        val ip: String? = null,
+        val kind: PunishmentKind,
+        val duration: Long? = null,
+        val reason: String,
+        val includeIp: Boolean = false,
+    ) : Serverbound
+
+    /**
+     * Staff only. Lifts every punishment of [user], or the ones on exactly the [ip] range.
+     */
+    @Serializable
+    @SerialName("Pardon")
+    public data class Pardon(val user: String? = null, val ip: String? = null) : Serverbound
+
+    /**
+     * Staff only. Answered with [Clientbound.Punishments].
+     */
+    @Serializable
+    @SerialName("RequestPunishments")
+    public data class RequestPunishments(val user: String) : Serverbound
+
+    /**
      * Staff only.
      */
     @Serializable

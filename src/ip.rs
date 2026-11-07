@@ -53,6 +53,13 @@ impl Cidr {
         })
     }
 
+    /// The range a ban on `ip` covers: the address itself, or its /64 for IPv6.
+    pub fn ban_range(ip: IpAddr) -> Cidr {
+        let ip = canonical(ip);
+        let prefix = if ip.is_ipv4() { 32 } else { 64 };
+        Cidr::new(ip, prefix).expect("prefix is in range")
+    }
+
     pub fn contains(&self, ip: IpAddr) -> bool {
         let ip = canonical(ip);
         ip.is_ipv4() == self.addr.is_ipv4() && mask(ip, self.prefix) == self.addr
@@ -184,6 +191,9 @@ mod tests {
         assert_eq!("0.0.0.0/0".parse::<Cidr>().unwrap().to_string(), "0.0.0.0/0");
         assert!("10.0.0.0/33".parse::<Cidr>().is_err());
         assert!("nonsense".parse::<Cidr>().is_err());
+
+        assert_eq!(Cidr::ban_range(ip("1.2.3.4")).to_string(), "1.2.3.4/32");
+        assert_eq!(Cidr::ban_range(ip("2001:db8:1:2:3:4:5:6")).to_string(), "2001:db8:1:2::/64");
     }
 
     #[test]

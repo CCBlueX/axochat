@@ -1,4 +1,5 @@
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "punishments")]
@@ -23,8 +24,9 @@ pub struct Model {
     pub revoked_by: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(8))")]
+#[serde(rename_all = "lowercase")]
 pub enum Kind {
     #[sea_orm(string_value = "mute")]
     Mute,

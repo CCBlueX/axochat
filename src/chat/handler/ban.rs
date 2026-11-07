@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 impl ChatServer {
     /// The database id of the moderator behind a connection.
-    fn moderator(&self, user_id: InternalId) -> Option<Uuid> {
+    pub(super) fn moderator(&self, user_id: InternalId) -> Option<Uuid> {
         let session = self.connections.get(&user_id)?;
         let Some(stored_id) = session.stored_id else {
             info!("`{}` is not logged in.", user_id);
@@ -85,7 +85,7 @@ impl ChatServer {
                             return;
                         }
                     };
-                    let ids = target.map(|target| actor.moderation.revoke(target.id)).unwrap_or_default();
+                    let ids = target.map(|target| actor.moderation.revoke(Some(target.id), None)).unwrap_or_default();
                     if ids.is_empty() {
                         actor.send_error(user_id, ClientError::NotBanned);
                         return;
@@ -99,29 +99,5 @@ impl ChatServer {
                     actor.send(user_id, ClientPacket::Success { reason: SuccessReason::Unban });
                 }),
         );
-    }
-
-    /// Stores the punishment and applies it to the connections it covers.
-    fn punish(&mut self, punishment: Punishment) {
-        self.persist(vec![Write::Punish(punishment.to_model())]);
-
-        if punishment.kind == Kind::Ban {
-            let covered: Vec<InternalId> = self
-                .connections
-                .iter()
-                .filter(|(id, session)| {
-                    session.is_logged_in()
-                        && !self.is_staff(**id)
-                        && punishment.covers(session.stored_id, Some(session.ip))
-                })
-                .map(|(id, _)| *id)
-                .collect();
-            for id in covered {
-                self.send_error(id, ClientError::Banned);
-                self.logout(id);
-            }
-        }
-
-        self.moderation.add(punishment);
     }
 }
