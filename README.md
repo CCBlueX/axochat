@@ -12,6 +12,7 @@ cargo run --release -- start
 ```
 
 It needs a MySQL or MariaDB database; tables are created on startup.
+`docker compose up -d` runs it with MariaDB from `.env` (set `DB_PASSWORD`); `COMPOSE_PROFILES=tunnel` and `TUNNEL_TOKEN` add a Cloudflare tunnel.
 Mutes from an old `banned.txt` move into the database with `axochat import-bans banned.txt`.
 
 ## Kotlin client

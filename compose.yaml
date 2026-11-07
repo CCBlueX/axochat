@@ -1,0 +1,53 @@
+services:
+  axochat:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVER_ADDR: 0.0.0.0:80
+      DATABASE_URL: mysql://axochat:${DB_PASSWORD:?}@mariadb:3306/axochat
+      # cloudflared shares this container's network
+      TRUSTED_PROXIES: 127.0.0.1/32
+    # certificate files in ./data are found by their relative names
+    working_dir: /data
+    volumes:
+      - ./data:/data
+    ports:
+      - 7886:7886
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    mem_limit: 1g
+    memswap_limit: 1g
+
+  mariadb:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: axochat
+      MARIADB_USER: axochat
+      MARIADB_PASSWORD: ${DB_PASSWORD:?}
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: 1g
+    memswap_limit: 1g
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    network_mode: service:axochat
+    mem_limit: 256m
+    memswap_limit: 256m
+
+volumes:
+  mariadb:
