@@ -49,7 +49,9 @@ pub struct Identify {
     pub name: String,
     /// The Minecraft account of an account user.
     pub linked: Option<Uuid>,
-    pub ip: IpAddr,
+    /// `None` when a service session sends for the user, which keeps its address, linked Minecraft
+    /// account and last visit.
+    pub ip: Option<IpAddr>,
     /// The id of the user if it is new.
     pub id: Uuid,
     pub at: i64,
@@ -69,10 +71,12 @@ impl Handler<Identify> for Store {
                 Some(model) => {
                     let mut model: user::ActiveModel = model.into();
                     model.name = Set(msg.name);
-                    model.last_seen_at = Set(msg.at);
-                    model.last_ip = Set(Some(msg.ip.to_string()));
-                    if let IdentityKey::Account(_) = msg.key {
-                        model.linked_minecraft_uuid = Set(msg.linked);
+                    if let Some(ip) = msg.ip {
+                        model.last_seen_at = Set(msg.at);
+                        model.last_ip = Set(Some(ip.to_string()));
+                        if let IdentityKey::Account(_) = msg.key {
+                            model.linked_minecraft_uuid = Set(msg.linked);
+                        }
                     }
                     model.update(&db).await
                 }
@@ -89,7 +93,7 @@ impl Handler<Identify> for Store {
                         name: Set(msg.name),
                         created_at: Set(msg.at),
                         last_seen_at: Set(msg.at),
-                        last_ip: Set(Some(msg.ip.to_string())),
+                        last_ip: Set(msg.ip.map(|ip| ip.to_string())),
                     }
                     .insert(&db)
                     .await

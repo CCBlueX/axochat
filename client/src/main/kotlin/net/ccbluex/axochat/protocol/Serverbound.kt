@@ -54,7 +54,15 @@ public sealed interface Serverbound {
      */
     @Serializable
     @SerialName("ChatMessage")
-    public data class ChatMessage(val channel: Channel, val content: String) : Serverbound
+    public data class ChatMessage(
+        val channel: Channel,
+        val content: String,
+        /**
+         * Service sessions only: the LiquidBounce Account id the message is sent for.
+         */
+        @SerialName("as")
+        val account: String? = null,
+    ) : Serverbound
 
     /**
      * Staff only.

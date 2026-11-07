@@ -21,7 +21,21 @@ pub struct Config {
     pub moderation: ModConfig,
 
     #[command(flatten)]
+    pub service: ServiceConfig,
+
+    #[command(flatten)]
     pub auth: AuthConfig,
+}
+
+#[derive(Args, Clone)]
+pub struct ServiceConfig {
+    /// A token that logs in as a staff account, for tooling. Unset disables it.
+    #[arg(id = "service_token", long = "service-token", env = "SERVICE_TOKEN", hide_env_values = true)]
+    pub token: Option<String>,
+
+    /// The name of the account the service token logs in as.
+    #[arg(id = "service_name", long = "service-name", env = "SERVICE_NAME", default_value = "LiquidChat")]
+    pub name: String,
 }
 
 #[derive(Args, Clone)]

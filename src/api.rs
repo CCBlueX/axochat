@@ -53,6 +53,17 @@ pub struct RoleDefinition {
     pub is_staff: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Profile {
+    pub uid: String,
+    pub nickname: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AssignedRole {
+    role_id: String,
+}
+
 impl Api {
     pub fn new(config: &ApiConfig) -> Api {
         Api {
@@ -87,6 +98,32 @@ impl Api {
         let Some(token) = &self.token else { return Ok(Vec::new()) };
         let request = self.client.get(format!("{}/api/v2/user/roles", self.url)).bearer_auth(token);
         Ok(fetch(request).await?.unwrap_or_default())
+    }
+
+    /// The last nickname the Service API saw for an account, `None` for an unknown account.
+    pub async fn profile(&self, uid: &str) -> Result<Option<Profile>, ApiError> {
+        let Some(token) = &self.token else { return Ok(None) };
+        // ids are plain, so they go into the URL as they are
+        if uid.is_empty() || !uid.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_') {
+            return Ok(None);
+        }
+        let request = self
+            .client
+            .get(format!("{}/api/v2/user/profiles?q={}", self.url, uid))
+            .bearer_auth(token);
+        let profiles: Vec<Profile> = fetch(request).await?.unwrap_or_default();
+        Ok(profiles.into_iter().find(|profile| profile.uid == uid))
+    }
+
+    /// Role ids of an account; `uid` must be one [Api::profile] found.
+    pub async fn account_roles(&self, uid: &str) -> Result<Vec<String>, ApiError> {
+        let Some(token) = &self.token else { return Ok(Vec::new()) };
+        let request = self
+            .client
+            .get(format!("{}/api/v2/user/{}/roles", self.url, uid))
+            .bearer_auth(token);
+        let roles: Vec<AssignedRole> = fetch(request).await?.unwrap_or_default();
+        Ok(roles.into_iter().map(|role| role.role_id).collect())
     }
 }
 
