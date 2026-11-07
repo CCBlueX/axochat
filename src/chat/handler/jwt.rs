@@ -18,7 +18,7 @@ impl ChatServer {
             self.send_error(user_id, ClientError::NotLoggedIn);
             return;
         }
-        // the token stands for a Minecraft account, which account logins have not proven
+        // the token stands for a Minecraft account, which account sessions only have after proving it
         let Some(player) = session.minecraft.clone() else {
             self.send_error(user_id, ClientError::NotSupported);
             return;

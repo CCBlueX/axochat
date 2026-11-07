@@ -165,11 +165,28 @@ public class AxochatSession internal constructor(
         uuid: UUID,
         allowMessages: Boolean,
         joinServer: suspend (serverId: String) -> Unit,
+    ): LoginResult = joinThenLogin(name, uuid, allowMessages, SuccessReason.Login, joinServer)
+
+    /**
+     * After [loginAccount], shows the Minecraft account the client plays on. [joinServer] as in [loginMojang].
+     */
+    public suspend fun proveMinecraft(
+        name: String,
+        uuid: UUID,
+        joinServer: suspend (serverId: String) -> Unit,
+    ): LoginResult = joinThenLogin(name, uuid, false, SuccessReason.Minecraft, joinServer)
+
+    private suspend fun joinThenLogin(
+        name: String,
+        uuid: UUID,
+        allowMessages: Boolean,
+        reason: SuccessReason,
+        joinServer: suspend (serverId: String) -> Unit,
     ): LoginResult {
         val info = request(Serverbound.RequestMojangInfo) { it as? Clientbound.MojangInfo }
             ?: return LoginResult.Closed
         joinServer(info.sessionHash)
-        return request(Serverbound.LoginMojang(name, uuid, allowMessages)) { it.answerTo(SuccessReason.Login) }
+        return request(Serverbound.LoginMojang(name, uuid, allowMessages)) { it.answerTo(reason) }
             ?: LoginResult.Closed
     }
 
