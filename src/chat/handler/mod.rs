@@ -1,6 +1,7 @@
 mod ban;
 mod count;
 mod jwt;
+mod login;
 mod message;
 mod mojang;
 
@@ -30,17 +31,17 @@ impl Handler<ServerPacketId> for ChatServer {
                 token,
                 allow_messages,
             } => {
-                self.handle_login_jwt(user_id, &token, allow_messages);
+                self.handle_login_jwt(user_id, &token, allow_messages, ctx);
             }
             ServerPacket::Message { content } => self.handle_message(user_id, content),
             ServerPacket::PrivateMessage { receiver, content } => {
                 self.handle_private_message(user_id, receiver, content);
             }
             ServerPacket::BanUser { user } => {
-                self.ban_user(user_id, &user);
+                self.ban_user(user_id, user, ctx);
             }
             ServerPacket::UnbanUser { user } => {
-                self.unban_user(user_id, &user);
+                self.unban_user(user_id, user, ctx);
             }
             ServerPacket::RequestUserCount => {
                 self.send_user_count(user_id);

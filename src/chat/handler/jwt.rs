@@ -3,9 +3,9 @@ use log::*;
 
 use super::{ChatServer, ClientPacket};
 use crate::auth::UserInfo;
-use crate::chat::{InternalId, SuccessReason, User, UserSession, send_message};
-use crate::message::RateLimiter;
-use std::collections::HashSet;
+use crate::chat::{InternalId, User, send_message};
+
+use actix::*;
 
 impl ChatServer {
     pub(super) fn handle_request_jwt(&mut self, user_id: InternalId) {
@@ -65,37 +65,21 @@ impl ChatServer {
         user_id: InternalId,
         jwt: &str,
         allow_messages: bool,
+        ctx: &mut Context<Self>,
     ) {
         let session = self
             .connections
-            .get_mut(&user_id)
+            .get(&user_id)
             .expect("could not find connection");
         if let Some(auth) = &self.authenticator {
             match auth.auth(jwt) {
                 Ok(info) => {
-                    self.users
-                        .entry(info.name.clone())
-                        .or_insert(UserSession {
-                            rate_limiter: RateLimiter::new(self.config.message.clone()),
-                            connections: HashSet::new(),
-                        })
-                        .connections
-                        .insert(user_id);
-
-                    session.user = Some(User {
+                    let user = User {
                         name: info.name,
                         uuid: info.uuid,
                         allow_messages,
-                    });
-                    
-                    let addr = &session.addr;
-                    send_message(
-                        addr,
-                        ClientPacket::Success {
-                            reason: SuccessReason::Login,
-                        },
-                        "jwt login success"
-                    );
+                    };
+                    self.identify(user_id, user, ctx);
                 }
                 Err(err) => {
                     info!("Login of user `{}` using JWT failed: {}", user_id, err);
