@@ -139,7 +139,7 @@ async fn start_server(config: Config) -> Result<()> {
         &config.net.trusted_proxies,
         config.net.real_ip_header.clone(),
     ));
-    let address = config.net.address.to_string();
+    let net = config.net.clone();
 
     let mut server = HttpServer::new(move || {
         App::new()
@@ -148,21 +148,25 @@ async fn start_server(config: Config) -> Result<()> {
             .service(web::resource("/ws").to(chat::chat_route))
     });
 
-    if let (Some(cert), Some(key)) = (config.net.cert_file, config.net.key_file) {
+    for address in &net.address {
+        server = server.bind(address)?;
+    }
+
+    if let (Some(cert), Some(key)) = (&net.cert_file, &net.key_file) {
         #[cfg(all(feature = "openssl-tls", feature = "rustls-tls"))]
         {
             compile_error!("Can't enable both the `openssl-tls` and the `rustls-tls` feature.")
         }
 
         #[cfg(feature = "openssl-tls")]
-        {
+        for address in &net.tls_address {
             let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-            builder.set_certificate_chain_file(&cert)?;
+            builder.set_certificate_chain_file(cert)?;
             let ft = match key.extension() {
                 Some(ext) if ext == "pem" => SslFiletype::PEM,
                 _ => SslFiletype::ASN1,
             };
-            builder.set_private_key_file(&key, ft)?;
+            builder.set_private_key_file(key, ft)?;
 
             server = server.bind_openssl(address, builder)?;
         }
@@ -170,29 +174,29 @@ async fn start_server(config: Config) -> Result<()> {
         #[cfg(feature = "rustls-tls")]
         {
             info!("Loading TLS certificate from {:?} and key from {:?}", cert, key);
-            
-            let cert_chain = CertificateDer::pem_file_iter(&cert)
+
+            let cert_chain = CertificateDer::pem_file_iter(cert)
                 .and_then(|certs| certs.collect::<std::result::Result<Vec<_>, _>>())
                 .map_err(|_| Error::RustTLSNoMsg)?;
-            let key = PrivateKeyDer::from_pem_file(&key).map_err(|_| Error::RustTLSNoMsg)?;
+            let key = PrivateKeyDer::from_pem_file(key).map_err(|_| Error::RustTLSNoMsg)?;
 
             let config = ServerConfig::builder()
                 .with_no_client_auth()
                 .with_single_cert(cert_chain, key)
                 .map_err(|_| Error::RustTLSNoMsg)?;
 
-            server = server.bind_rustls_0_23(address, config)?;
+            for address in &net.tls_address {
+                server = server.bind_rustls_0_23(address, config.clone())?;
+            }
         }
 
         #[cfg(not(any(feature = "openssl-tls", feature = "rustls-tls")))]
-        {
-            server = server.bind(address)?;
-        }
-    } else {
-        server = server.bind(address)?;
+        warn!("Built without TLS support, not listening on {:?}", net.tls_address);
+
+        info!("Serving HTTPS at {:?}", net.tls_address);
     }
 
-    info!("Started server at {}", config.net.address);
+    info!("Serving HTTP at {:?}", net.address);
     server.run().await?;
     Ok(())
 }

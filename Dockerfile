@@ -28,6 +28,6 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/axochat /app/axochat
 
-EXPOSE 8080
+EXPOSE 80 443 7886
 ENTRYPOINT ["/app/axochat"]
 CMD ["start"]
