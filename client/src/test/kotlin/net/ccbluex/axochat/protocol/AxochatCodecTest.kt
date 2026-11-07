@@ -74,4 +74,19 @@ class AxochatCodecTest {
         )
         assertEquals(Clientbound.Punished(PunishmentKind.Mute, "spam", 60000), punished)
     }
+
+    @Test
+    fun `report packets`() {
+        assertEquals(
+            """{"m":"Report","c":{"user":"Notch","message":7,"reason":"spam"}}""",
+            AxochatCodec.encode(Serverbound.Report("Notch", 7, "spam")),
+        )
+        val created = assertIs<Clientbound.ReportCreated>(AxochatCodec.decode(
+            """{"m":"ReportCreated","c":{"report":{"id":"r","reporter":{"id":"a","kind":"account","name":"A"},""" +
+                """"target":{"id":"b","kind":"account","name":"B"},"channel":{"type":"direct","user":"a"},""" +
+                """"message":7,"content":"hi","reason":"spam","time":1}}}""",
+        ))
+        assertEquals(Channel.Direct("a"), created.report.channel)
+        assertEquals("hi", created.report.content)
+    }
 }
