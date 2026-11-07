@@ -5,6 +5,7 @@ package net.ccbluex.axochat.protocol
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
+import net.ccbluex.axochat.user.Player
 import java.util.UUID
 
 public sealed interface Serverbound {
@@ -133,9 +134,55 @@ public sealed interface Serverbound {
     public data class ResolveReport(val id: String) : Serverbound
 
     /**
+     * Where the client is. The server keeps the latest one per connection, at most one per second.
+     */
+    @Serializable
+    @SerialName("Presence")
+    public data class Presence(
+        val state: PresenceState,
+        /**
+         * Multiplayer only, as typed.
+         */
+        val server: String? = null,
+        val dimension: String? = null,
+        val position: BlockPosition? = null,
+        val player: Player? = null,
+        /**
+         * An IANA time zone id.
+         */
+        val timezone: String,
+        /**
+         * The client's clock when sending, in milliseconds since the Unix epoch.
+         */
+        val time: Long,
+    ) : Serverbound
+
+    /**
+     * Staff only. Answered with [Clientbound.Presence].
+     */
+    @Serializable
+    @SerialName("RequestPresence")
+    public data class RequestPresence(val user: String) : Serverbound
+
+    /**
      * Staff only.
      */
     @Serializable
     @SerialName("RequestUserCount")
     public data object RequestUserCount : Serverbound
 }
+
+@Serializable
+@JvmInline
+public value class PresenceState(public val name: String) {
+    override fun toString(): String = name
+
+    public companion object {
+        public val Menu: PresenceState = PresenceState("menu")
+        public val Singleplayer: PresenceState = PresenceState("singleplayer")
+        public val Multiplayer: PresenceState = PresenceState("multiplayer")
+    }
+}
+
+@Serializable
+public data class BlockPosition(val x: Int, val y: Int, val z: Int)

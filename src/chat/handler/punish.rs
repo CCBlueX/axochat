@@ -167,7 +167,7 @@ impl ChatServer {
     }
 
     /// Finds a user by id or name, online ones first; answers `UnknownUser` when there is none.
-    fn find_user<F>(&mut self, ctx: &mut Context<Self>, user_id: InternalId, query: String, then: F)
+    pub(super) fn find_user<F>(&mut self, ctx: &mut Context<Self>, user_id: InternalId, query: String, then: F)
     where
         F: FnOnce(&mut ChatServer, Found) + 'static,
     {

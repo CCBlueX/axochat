@@ -41,6 +41,8 @@ public object AxochatCodec {
         entry(Serverbound.Report.serializer()),
         entry(Serverbound.RequestReports.serializer()),
         entry(Serverbound.ResolveReport.serializer()),
+        entry(Serverbound.Presence.serializer()),
+        entry(Serverbound.RequestPresence.serializer()),
     ).toMap()
 
     private val clientbound: Map<String, KSerializer<out Clientbound>> = listOf(
@@ -58,6 +60,7 @@ public object AxochatCodec {
         Clientbound.Punishments.serializer(),
         Clientbound.ReportCreated.serializer(),
         Clientbound.Reports.serializer(),
+        Clientbound.Presence.serializer(),
     ).associateBy { it.descriptor.serialName }
 
     private inline fun <reified T : Serverbound> entry(serializer: KSerializer<T>) =

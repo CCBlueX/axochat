@@ -3,12 +3,14 @@ mod connect;
 mod handler;
 mod history;
 mod id;
+mod presence;
 mod session;
 
 pub use id::*;
 
 use channel::{Channel, Target};
 use history::History;
+use presence::Presence;
 
 use crate::config::Config;
 use crate::entity::punishment::Kind as PunishmentKind;
@@ -166,6 +168,7 @@ impl ChatServer {
         let Some(stored_id) = self.connections.get_mut(&id).and_then(|session| {
             session.user = None;
             session.minecraft = None;
+            session.presence = None;
             session.stored_id.take()
         }) else {
             return;
@@ -299,6 +302,8 @@ pub(self) struct SessionState {
     minecraft: Option<UserInfo>,
     /// The id of the logged in user in the database.
     stored_id: Option<Uuid>,
+    /// The latest presence and when it came; never stored or shared but with staff.
+    presence: Option<(Instant, Presence)>,
 }
 
 impl SessionState {
@@ -419,6 +424,10 @@ enum ClientPacket {
     Reports {
         reports: Vec<ReportView>,
     },
+    Presence {
+        user: UserRef,
+        presence: Option<Presence>,
+    },
 }
 
 #[derive(Serialize, Clone)]
@@ -530,6 +539,8 @@ enum ServerPacket {
     },
     RequestReports,
     ResolveReport { id: Uuid },
+    Presence(Presence),
+    RequestPresence { user: String },
 }
 
 #[derive(Message)]
