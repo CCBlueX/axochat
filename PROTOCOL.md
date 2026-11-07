@@ -475,6 +475,23 @@ It must fit the validation scheme described at [Message](#message).
 }
 ```
 
+A service session can send a message for a LiquidBounce Account, which then counts as that
+account's message. `as` is the account id; only `{"type": "global"}` is allowed, other channels
+are answered with `UnknownChannel`. The account's roles, mutes, bans and rate limit apply.
+Errors about such a message carry the account id in `detail`: `NotPermitted` for other sessions,
+`UnknownUser` for an unknown account.
+
+```json
+{
+    "m": "ChatMessage",
+    "c": {
+        "channel": { "type": "global" },
+        "content": "Hi!",
+        "as": "<account id>"
+    }
+}
+```
+
 ### Hello
 Starts the [handshake](#handshake). Only answered before logging in.
 
@@ -498,6 +515,10 @@ or an [Error](#error): `LoginFailed` for an invalid token, `Banned` for a banned
 - `token` is an OAuth access token of the LiquidBounce Service API.
 - If `allow_messages` is true, other clients may send private messages
   to this client.
+
+When the server has a service token configured (`SERVICE_TOKEN`), that token logs in as a staff
+account named after `SERVICE_NAME` instead, a staff login for tooling.
+IP bans do not apply to it.
 
 **Example**
 ```json

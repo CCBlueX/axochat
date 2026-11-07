@@ -31,7 +31,7 @@ use rand_hc::Hc128Rng;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 const MAINTENANCE: Duration = Duration::from_secs(3600);
@@ -58,6 +58,8 @@ pub struct ChatServer {
     connections: HashMap<InternalId, SessionState>,
     /// Keyed by the id in the database.
     users: HashMap<Uuid, UserSession>,
+    /// Keyed by the id in the database.
+    relayed: HashMap<Uuid, Relayed>,
 
     api: Arc<Api>,
     /// In the order of the Service API.
@@ -80,6 +82,7 @@ impl ChatServer {
         ChatServer {
             connections: HashMap::new(),
             users: HashMap::new(),
+            relayed: HashMap::new(),
 
             api: Arc::new(Api::new(&config.api)),
             roles: Vec::new(),
@@ -117,6 +120,7 @@ impl Actor for ChatServer {
         ctx.run_interval(MAINTENANCE, |actor, _ctx| {
             let now = now_ms();
             actor.moderation.prune(now);
+            actor.relayed.retain(|_, relayed| relayed.fetched_at.elapsed() < ROLE_REFRESH);
             let retention = actor.config.moderation.ip_retention.as_millis() as i64;
             actor.persist(vec![Write::ForgetIps { seen_before: now - retention }]);
         });
@@ -146,6 +150,15 @@ impl ChatServer {
             ClientPacket::Error { message: error }
         };
         send_message(&session.addr, packet, "error");
+    }
+
+    /// Errors about a message sent for an account name the account in `detail`.
+    fn send_error_for(&self, user_id: InternalId, error: ClientError, account: &str) {
+        let packet = ClientPacket::ErrorDetail {
+            message: error.code(),
+            detail: Some(account.to_owned()),
+        };
+        self.send(user_id, packet);
     }
 
     /// Ends the login of a connection, which stays open.
@@ -184,15 +197,17 @@ impl ChatServer {
     /// Whether the logged in user of a connection is staff.
     fn is_staff(&self, user_id: InternalId) -> bool {
         self.online_user(user_id)
-            .is_some_and(|user| self.has_staff_role(&user.roles))
+            .is_some_and(|user| user.service || self.has_staff_role(&user.roles))
     }
 
     /// Whether the logged in user of a connection may use color codes and emoji.
     fn has_perks(&self, user_id: InternalId) -> bool {
-        self.online_user(user_id).is_some_and(|user| {
-            self.has_staff_role(&user.roles)
-                || user.roles.iter().any(|role| self.config.message.perk_roles.contains(role))
-        })
+        self.online_user(user_id)
+            .is_some_and(|user| user.service || self.has_perk_role(&user.roles))
+    }
+
+    fn has_perk_role(&self, roles: &[String]) -> bool {
+        self.has_staff_role(roles) || roles.iter().any(|role| self.config.message.perk_roles.contains(role))
     }
 
     fn online_user(&self, user_id: InternalId) -> Option<&UserSession> {
@@ -217,8 +232,20 @@ impl ChatServer {
         let session = self.connections.get(&user_id)?;
         let (info, id) = (session.user.as_ref()?, session.stored_id?);
         let online = self.users.get(&id)?;
-        let mut roles: Vec<RoleView> = online
-            .roles
+        Some(Author {
+            id,
+            kind: online.kind,
+            name: info.name.clone(),
+            uuid: info.uuid,
+            minecraft: session.minecraft.clone().filter(|_| online.kind == Kind::Account),
+            roles: self.role_views(&online.roles),
+            highlight: self.has_perks(user_id),
+        })
+    }
+
+    /// Staff roles first, then in the order of the Service API.
+    fn role_views(&self, roles: &[String]) -> Vec<RoleView> {
+        let mut roles: Vec<RoleView> = roles
             .iter()
             .map(|id| match self.role(id) {
                 Some(role) => RoleView {
@@ -235,15 +262,7 @@ impl ChatServer {
             .collect();
         let position = |role: &RoleView| self.roles.iter().position(|known| known.id == role.id).unwrap_or(usize::MAX);
         roles.sort_by_key(|role| (!role.staff, position(role)));
-        Some(Author {
-            id,
-            kind: online.kind,
-            name: info.name.clone(),
-            uuid: info.uuid,
-            minecraft: session.minecraft.clone().filter(|_| online.kind == Kind::Account),
-            roles,
-            highlight: self.has_perks(user_id),
-        })
+        roles
     }
 }
 
@@ -294,6 +313,18 @@ struct UserSession {
     kind: Kind,
     /// Service API role ids.
     roles: Vec<String>,
+    /// Logged in with the service token.
+    service: bool,
+}
+
+/// An account a service session sent messages for, as long as its roles are fresh.
+struct Relayed {
+    account: String,
+    legacy: UserInfo,
+    /// Service API role ids.
+    roles: Vec<String>,
+    rate_limiter: RateLimiter,
+    fetched_at: Instant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -471,7 +502,13 @@ enum ServerPacket {
     BanUser { user: Uuid },
     UnbanUser { user: Uuid },
     RequestUserCount,
-    ChatMessage { channel: Target, content: String },
+    ChatMessage {
+        channel: Target,
+        content: String,
+        /// Service sessions only: the LiquidBounce Account the message is sent for.
+        #[serde(rename = "as")]
+        account: Option<String>,
+    },
     Punish {
         user: Option<String>,
         ip: Option<String>,

@@ -51,6 +51,10 @@ class AxochatCodecTest {
             """{"m":"ChatMessage","c":{"channel":{"type":"global"},"content":"hi"}}""",
             AxochatCodec.encode(Serverbound.ChatMessage(Channel.Global, "hi")),
         )
+        assertEquals(
+            """{"m":"ChatMessage","c":{"channel":{"type":"global"},"content":"hi","as":"abc"}}""",
+            AxochatCodec.encode(Serverbound.ChatMessage(Channel.Global, "hi", account = "abc")),
+        )
 
         fun packet(channel: String) =
             """{"m":"ChatMessage","c":{"channel":$channel,"id":7,"time":1,"content":"hi",""" +
