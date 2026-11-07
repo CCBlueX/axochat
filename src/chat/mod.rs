@@ -13,6 +13,7 @@ use actix::*;
 use actix_web::{web, HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
 
+use crate::api::{Api, RoleDefinition};
 use crate::auth::{Authenticator, UserInfo};
 use crate::ip::RealIp;
 use crate::message::{MessageValidator, RateLimiter};
@@ -22,10 +23,14 @@ use rand::{rngs::SysRng, SeedableRng};
 use rand_hc::Hc128Rng;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
 const MAINTENANCE: Duration = Duration::from_secs(3600);
+const ROLE_REFRESH: Duration = Duration::from_secs(600);
+/// The protocol a client announces with `Hello` to get the packets added after the original ones.
+pub const PROTOCOL: u32 = 2;
 
 pub async fn chat_route(
     req: HttpRequest,
@@ -44,8 +49,12 @@ pub async fn chat_route(
 
 pub struct ChatServer {
     connections: HashMap<InternalId, SessionState>,
-    users: HashMap<String, UserSession>,
+    /// Keyed by the id in the database.
+    users: HashMap<Uuid, UserSession>,
 
+    api: Arc<Api>,
+    /// In the order of the Service API.
+    roles: Vec<RoleDefinition>,
     rng: rand_hc::Hc128Rng,
     authenticator: Option<Authenticator>,
     validator: MessageValidator,
@@ -62,6 +71,8 @@ impl ChatServer {
             connections: HashMap::new(),
             users: HashMap::new(),
 
+            api: Arc::new(Api::new(&config.api)),
+            roles: Vec::new(),
             rng: Hc128Rng::try_from_rng(&mut SysRng).expect("could not initialize hc128 rng"),
             authenticator: Authenticator::new(&config.auth),
             validator: MessageValidator::new(config.message.clone()),
@@ -89,6 +100,8 @@ impl Actor for ChatServer {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Context<Self>) {
+        self.refresh_roles(ctx);
+        ctx.run_interval(ROLE_REFRESH, |actor, ctx| actor.refresh_roles(ctx));
         ctx.run_interval(MAINTENANCE, |actor, _ctx| {
             let now = now_ms();
             actor.moderation.prune(now);
@@ -103,20 +116,120 @@ impl ChatServer {
         self.store.do_send(Persist(writes));
     }
 
+    fn send(&self, user_id: InternalId, packet: ClientPacket) {
+        if let Some(session) = self.connections.get(&user_id) {
+            send_message(&session.addr, packet, "packet");
+        }
+    }
+
+    /// Clients that sent `Hello` get the error code with its value apart.
+    fn send_error(&self, user_id: InternalId, error: ClientError) {
+        let Some(session) = self.connections.get(&user_id) else { return };
+        let packet = if session.hello {
+            ClientPacket::ErrorDetail {
+                message: error.code(),
+                detail: error.detail(),
+            }
+        } else {
+            ClientPacket::Error { message: error }
+        };
+        send_message(&session.addr, packet, "error");
+    }
+
     /// Ends the login of a connection, which stays open.
     fn logout(&mut self, id: InternalId) {
-        let Some(info) = self.connections.get_mut(&id).and_then(|session| {
-            session.stored_id = None;
-            session.user.take()
+        let Some(stored_id) = self.connections.get_mut(&id).and_then(|session| {
+            session.user = None;
+            session.minecraft = None;
+            session.stored_id.take()
         }) else {
             return;
         };
-        if let Some(user_session) = self.users.get_mut(&info.name) {
+        if let Some(user_session) = self.users.get_mut(&stored_id) {
             user_session.connections.remove(&id);
             if user_session.connections.is_empty() {
-                self.users.remove(&info.name);
+                self.users.remove(&stored_id);
             }
         }
+    }
+
+    fn refresh_roles(&mut self, ctx: &mut Context<Self>) {
+        let api = self.api.clone();
+        ctx.spawn(async move { api.roles().await }.into_actor(self).map(|result, actor, _ctx| match result {
+            Ok(roles) => actor.roles = roles,
+            Err(err) => warn!("Could not refresh roles: {}", err),
+        }));
+    }
+
+    fn has_staff_role(&self, roles: &[String]) -> bool {
+        roles.iter().any(|role| self.role(role).is_some_and(|role| role.is_staff))
+    }
+
+    fn role(&self, id: &str) -> Option<&RoleDefinition> {
+        self.roles.iter().find(|role| role.id == id)
+    }
+
+    /// Whether the logged in user of a connection is staff.
+    fn is_staff(&self, user_id: InternalId) -> bool {
+        self.online_user(user_id)
+            .is_some_and(|user| self.has_staff_role(&user.roles))
+    }
+
+    /// Whether the logged in user of a connection may use color codes and emoji.
+    fn has_perks(&self, user_id: InternalId) -> bool {
+        self.online_user(user_id).is_some_and(|user| {
+            self.has_staff_role(&user.roles)
+                || user.roles.iter().any(|role| self.config.message.perk_roles.contains(role))
+        })
+    }
+
+    fn online_user(&self, user_id: InternalId) -> Option<&UserSession> {
+        let stored_id = self.connections.get(&user_id)?.stored_id?;
+        self.users.get(&stored_id)
+    }
+
+    /// Names are not unique: a Minecraft player keeps their name against an account named alike.
+    fn find_by_name(&self, name: &str) -> Option<&UserSession> {
+        self.users
+            .values()
+            .filter(|user| {
+                user.connections
+                    .iter()
+                    .find_map(|id| self.connections.get(id)?.user.as_ref())
+                    .is_some_and(|info| info.name == name)
+            })
+            .min_by_key(|user| user.kind == Kind::Account)
+    }
+
+    fn author(&self, user_id: InternalId) -> Option<Author> {
+        let session = self.connections.get(&user_id)?;
+        let (info, id) = (session.user.as_ref()?, session.stored_id?);
+        let online = self.users.get(&id)?;
+        let mut roles: Vec<RoleView> = online
+            .roles
+            .iter()
+            .map(|id| match self.role(id) {
+                Some(role) => RoleView {
+                    id: role.id.clone(),
+                    name: role.display_name.clone(),
+                    staff: role.is_staff,
+                },
+                None => RoleView {
+                    id: id.clone(),
+                    name: id.clone(),
+                    staff: false,
+                },
+            })
+            .collect();
+        let position = |role: &RoleView| self.roles.iter().position(|known| known.id == role.id).unwrap_or(usize::MAX);
+        roles.sort_by_key(|role| (!role.staff, position(role)));
+        Some(Author {
+            id,
+            kind: online.kind,
+            name: info.name.clone(),
+            uuid: info.uuid,
+            roles,
+        })
     }
 }
 
@@ -134,7 +247,11 @@ pub(self) struct SessionState {
     addr: Recipient<ClientPacket>,
     ip: IpAddr,
     session_hash: Option<String>,
+    /// Sent `Hello`, so it understands the packets added since the original protocol.
+    hello: bool,
     user: Option<User>,
+    /// The Minecraft account a Mojang or JWT login proved.
+    minecraft: Option<UserInfo>,
     /// The id of the logged in user in the database.
     stored_id: Option<Uuid>,
 }
@@ -148,6 +265,17 @@ impl SessionState {
 struct UserSession {
     rate_limiter: RateLimiter,
     connections: HashSet<InternalId>,
+    kind: Kind,
+    /// Service API role ids.
+    roles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Kind {
+    /// A LiquidBounce Account.
+    Account,
+    Mojang,
 }
 
 #[derive(Message)]
@@ -185,6 +313,37 @@ enum ClientPacket {
     Error {
         message: ClientError,
     },
+    #[serde(rename = "Error")]
+    ErrorDetail {
+        message: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
+    Hello {
+        protocol: u32,
+    },
+    Welcome {
+        user: Author,
+        staff: bool,
+    },
+}
+
+#[derive(Serialize, Clone)]
+struct Author {
+    /// The id in the database.
+    id: Uuid,
+    kind: Kind,
+    name: String,
+    /// The Minecraft account shown for the user, nil if unknown.
+    uuid: Uuid,
+    roles: Vec<RoleView>,
+}
+
+#[derive(Serialize, Clone)]
+struct RoleView {
+    id: String,
+    name: String,
+    staff: bool,
 }
 
 /// A serverbound packet
@@ -195,6 +354,8 @@ enum ServerPacket {
     RequestMojangInfo,
     LoginMojang(User),
     LoginJWT { token: String, allow_messages: bool },
+    LoginAccount { token: String, allow_messages: bool },
+    Hello { protocol: u32 },
     RequestJWT,
     Message { content: String },
     PrivateMessage { receiver: String, content: String },
@@ -223,4 +384,22 @@ enum SuccessReason {
     Login,
     Ban,
     Unban,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ClientError, ClientPacket};
+
+    #[test]
+    fn errors_keep_their_form() {
+        let error = ClientError::InvalidCharacter('§');
+        let old = serde_json::to_string(&ClientPacket::Error { message: error.clone() }).unwrap();
+        assert_eq!(old, r#"{"m":"Error","c":{"message":{"InvalidCharacter":"§"}}}"#);
+        let detailed = ClientPacket::ErrorDetail {
+            message: error.code(),
+            detail: error.detail(),
+        };
+        let detailed = serde_json::to_string(&detailed).unwrap();
+        assert_eq!(detailed, r#"{"m":"Error","c":{"message":"InvalidCharacter","detail":"§"}}"#);
+    }
 }

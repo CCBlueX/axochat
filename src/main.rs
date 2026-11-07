@@ -1,3 +1,4 @@
+mod api;
 mod auth;
 mod chat;
 mod config;
@@ -146,8 +147,7 @@ async fn start_server(config: Config, database: &DbConfig) -> Result<()> {
     }
 
     let store = open_store(database).await?;
-    let moderators = moderation::read_ids(&config.moderation.moderators)?;
-    let moderation = moderation::Moderation::new(moderators, active_punishments(&store).await?);
+    let moderation = moderation::Moderation::new(active_punishments(&store).await?);
 
     let server_config = config.clone();
     let server = chat::ChatServer::new(server_config, store, moderation).start();

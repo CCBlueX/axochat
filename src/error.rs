@@ -89,7 +89,7 @@ impl From<ClientError> for Error {
 }
 
 /// A client-facing error.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum ClientError {
     NotSupported,
     LoginFailed,
@@ -106,6 +106,38 @@ pub enum ClientError {
     InvalidCharacter(char),
     InvalidId,
     Internal,
+}
+
+impl ClientError {
+    /// The name of the error without its value.
+    pub fn code(&self) -> &'static str {
+        use self::ClientError::*;
+
+        match self {
+            NotSupported => "NotSupported",
+            LoginFailed => "LoginFailed",
+            NotLoggedIn => "NotLoggedIn",
+            AlreadyLoggedIn => "AlreadyLoggedIn",
+            MojangRequestMissing => "MojangRequestMissing",
+            NotPermitted => "NotPermitted",
+            NotBanned => "NotBanned",
+            Banned => "Banned",
+            RateLimited => "RateLimited",
+            PrivateMessageNotAccepted => "PrivateMessageNotAccepted",
+            EmptyMessage => "EmptyMessage",
+            MessageTooLong => "MessageTooLong",
+            InvalidCharacter(_) => "InvalidCharacter",
+            InvalidId => "InvalidId",
+            Internal => "Internal",
+        }
+    }
+
+    pub fn detail(&self) -> Option<String> {
+        match self {
+            ClientError::InvalidCharacter(ch) => Some(ch.to_string()),
+            _ => None,
+        }
+    }
 }
 
 impl error::Error for ClientError {}

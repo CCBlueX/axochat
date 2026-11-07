@@ -4,7 +4,7 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    # certificates and moderators.txt in the data directory are found by their relative names
+    # certificates in the data directory are found by their relative names
     working_dir: /data
     volumes:
       - ${DATA_DIR:-./data}:/data

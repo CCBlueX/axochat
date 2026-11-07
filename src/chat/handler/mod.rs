@@ -1,5 +1,7 @@
+mod account;
 mod ban;
 mod count;
+mod hello;
 mod jwt;
 mod login;
 mod message;
@@ -32,6 +34,12 @@ impl Handler<ServerPacketId> for ChatServer {
                 allow_messages,
             } => {
                 self.handle_login_jwt(user_id, &token, allow_messages, ctx);
+            }
+            ServerPacket::LoginAccount { token, allow_messages } => {
+                self.login_account(user_id, token, allow_messages, ctx);
+            }
+            ServerPacket::Hello { protocol } => {
+                self.handle_hello(user_id, protocol);
             }
             ServerPacket::Message { content } => self.handle_message(user_id, content),
             ServerPacket::PrivateMessage { receiver, content } => {
