@@ -10,6 +10,7 @@ All packets are sent to the `/ws` endpoint.
     - [Id](#id)
     - [UserInfo](#userinfo)
 - [Handshake](#handshake)
+- [Minecraft proof](#minecraft-proof)
 - [Packets](#packets)
     - [Client](#client)
         - [Error](#error)
@@ -43,6 +44,16 @@ Clients that announce protocol 2 or newer get the packets added since, such as [
 and [Error](#error) packets with a `detail`.
 Clients that send no `Hello` keep the original protocol, and servers that do not know `Hello` ignore it,
 so a client that gets no answer within a few seconds uses the original protocol.
+
+# Minecraft proof
+After [LoginAccount](#loginaccount), a session can prove the Minecraft account it plays on,
+with the same packets as a Mojang login:
+[RequestMojangInfo](#requestmojanginfo), joining the session server with the hash from [MojangInfo](#mojanginfo),
+then [LoginMojang](#loginmojang) (`allow_messages` is ignored).
+The server answers with [Welcome](#welcome) (after a [handshake](#handshake)), now showing the account as `minecraft`,
+and [Success](#success) with `Minecraft`; or with an [Error](#error), such as `LoginFailed` or `InvalidId`,
+and the session stays logged in as before.
+The proof lasts until the session ends.
 
 # Packets
 Packets are sent in websocket `text` messages encoded as JSON objects.
@@ -191,6 +202,7 @@ were processed successfully.
   - `Login`
   - `Ban`
   - `Unban`
+  - `Minecraft` after a [Minecraft proof](#minecraft-proof)
 
 **Example**
 ```json
@@ -227,6 +239,8 @@ Sent after a successful login, right before [Success](#success), to clients afte
   - `kind` is `account` for a LiquidBounce Account and `mojang` for a Minecraft account without one.
   - `name` is the name others see.
   - `uuid` is the Minecraft account shown for the user, the nil uuid if unknown.
+  - `minecraft` is the `name` and `uuid` of the Minecraft account the session proved it plays on,
+    left out without a [Minecraft proof](#minecraft-proof).
   - `roles` are the roles of the account, staff roles first: `id`, display `name` and whether it is a `staff` role.
 - `staff` tells whether the user may moderate.
 
@@ -332,6 +346,7 @@ it has to send a `LoginMojang` packet to the server.
 After the server receives a `LoginMojang` packet,
 it will send [Success](#success) if the login was successful.
 A Minecraft account linked to a LiquidBounce Account logs in as that account; this applies to [LoginJWT](#loginjwt) too.
+Sessions logged in with [LoginAccount](#loginaccount) use it for a [Minecraft proof](#minecraft-proof) instead.
 
 - `name` needs to be associated with the uuid.
 - `uuid` is not guaranteed to be hyphenated.

@@ -19,6 +19,7 @@ public sealed interface Serverbound {
 
     /**
      * Sent after joining the session server with the hash from [Clientbound.MojangInfo].
+     * After an account login it proves the Minecraft account instead of logging in.
      */
     @Serializable
     @SerialName("LoginMojang")
