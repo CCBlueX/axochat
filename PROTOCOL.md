@@ -544,9 +544,8 @@ them, and the server drops them.
 target's and readable by the reporter, or the answer is `InvalidId`.
 
 A user files at most 10 reports per hour, beyond that the answer is
-`RateLimited`; repeating a report changes nothing. Reports with a `message`
-from five networks within an hour mute the target for an hour until staff
-review. Users first seen less than a day ago do not count.
+`RateLimited`; repeating a report changes nothing. Reports never punish on
+their own; staff review them.
 
 ```json
 { "m": "Report", "c": { "user": "Spammer", "message": 4182, "reason": "Spam" } }

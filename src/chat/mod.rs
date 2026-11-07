@@ -506,6 +506,4 @@ struct RecentReport {
     target: UserId,
     reporter: UserId,
     message: Option<u64>,
-    /// The reporter's network, if the report counts towards an automatic mute.
-    network: Option<crate::ip::Cidr>,
 }

@@ -1,34 +1,20 @@
 use crate::chat::{
     new_id, now_ms, ChatServer, ClientPacket, Identity, InternalId, RecentReport, ReportView, Scope, SuccessReason,
-    UserId,
 };
-use crate::entity::{punishment, report};
+use crate::entity::report;
 use crate::error::ClientError;
-use crate::ip::Cidr;
-use crate::moderation::Punishment;
 use crate::store::{LoadReports, Write};
 use log::*;
 
 use actix::*;
-use std::collections::HashSet;
-use std::net::IpAddr;
 use uuid::Uuid;
 
-/// Reporters on this many different networks within the window mute the target until staff look.
-const REPORTS_TO_MUTE: usize = 5;
 const REPORT_WINDOW: i64 = 60 * 60 * 1000;
-const AUTO_MUTE: i64 = 60 * 60 * 1000;
-/// Reporters first seen less than this ago do not count towards a mute, against throwaway accounts.
-const REPORTER_AGE: i64 = 24 * 60 * 60 * 1000;
+
 /// Reports one user can file per window.
 const REPORTS_PER_REPORTER: usize = 10;
 const MAX_REASON: usize = 256;
 const LISTED_REPORTS: u64 = 50;
-
-fn network(ip: IpAddr) -> Cidr {
-    let prefix = if crate::ip::canonical(ip).is_ipv4() { 24 } else { 64 };
-    Cidr::new(ip, prefix).expect("prefix is in range")
-}
 
 impl ChatServer {
     pub(super) fn handle_report(&mut self, user_id: InternalId, query: String, message: Option<u64>, reason: String, ctx: &mut Context<Self>) {
@@ -108,47 +94,8 @@ impl ChatServer {
                 }
             }
 
-            let ip = actor.connections.get(&user_id).map(|connection| connection.ip);
-            actor.count_report(reporter, target, message, ip, now);
+            actor.recent_reports.push(RecentReport { at: now, target, reporter, message });
         });
-    }
-
-    /// Only reports pointing at a message, from users known for a while, count towards a mute.
-    fn count_report(&mut self, reporter: UserId, target: UserId, message: Option<u64>, ip: Option<IpAddr>, now: i64) {
-        let counts = message.is_some()
-            && self
-                .users
-                .get(&reporter)
-                .is_some_and(|online| now - online.created_at >= REPORTER_AGE);
-        self.recent_reports.push(RecentReport {
-            at: now,
-            target,
-            reporter,
-            message,
-            network: ip.filter(|_| counts).map(network),
-        });
-
-        let networks: HashSet<Cidr> = self
-            .recent_reports
-            .iter()
-            .filter(|report| report.target == target)
-            .filter_map(|report| report.network)
-            .collect();
-        let muted = self.moderation.find(punishment::Kind::Mute, Some(target), None, now).is_some();
-        if networks.len() >= REPORTS_TO_MUTE && !muted && !self.is_staff(target) {
-            info!("`{}` was muted automatically after {} reports.", target, networks.len());
-            let punishment = Punishment {
-                id: new_id(&mut self.rng),
-                kind: punishment::Kind::Mute,
-                user: Some(target),
-                ip: None,
-                reason: "Reported by several users".into(),
-                issued_by: None,
-                created_at: now,
-                expires_at: Some(now + AUTO_MUTE),
-            };
-            self.punish(punishment);
-        }
     }
 
     fn report_view(&self, report: &report::Model) -> Option<ReportView> {
