@@ -34,12 +34,21 @@ macro_rules! atomic {
     }};
 }
 
-/// Finds or creates the user behind a Minecraft login and records the visit.
+#[derive(Debug, Clone)]
+pub enum IdentityKey {
+    /// A LiquidBounce Account id.
+    Account(String),
+    Minecraft(Uuid),
+}
+
+/// Finds or creates the user behind a login and records the visit.
 #[derive(Message)]
 #[rtype(result = "Result<user::Model, DbErr>")]
 pub struct Identify {
-    pub minecraft_uuid: Uuid,
+    pub key: IdentityKey,
     pub name: String,
+    /// The Minecraft account of an account user.
+    pub linked: Option<Uuid>,
     pub ip: IpAddr,
     /// The id of the user if it is new.
     pub id: Uuid,
@@ -51,22 +60,32 @@ impl Handler<Identify> for Store {
 
     fn handle(&mut self, msg: Identify, _ctx: &mut Context<Self>) -> Self::Result {
         atomic!(self, db => {
-            let existing = user::Entity::find()
-                .filter(user::Column::MinecraftUuid.eq(msg.minecraft_uuid))
-                .one(&db)
-                .await?;
+            let existing = match &msg.key {
+                IdentityKey::Account(account) => user::Column::Account.eq(account.as_str()),
+                IdentityKey::Minecraft(uuid) => user::Column::MinecraftUuid.eq(*uuid),
+            };
+            let existing = user::Entity::find().filter(existing).one(&db).await?;
             match existing {
                 Some(model) => {
                     let mut model: user::ActiveModel = model.into();
                     model.name = Set(msg.name);
                     model.last_seen_at = Set(msg.at);
                     model.last_ip = Set(Some(msg.ip.to_string()));
+                    if let IdentityKey::Account(_) = msg.key {
+                        model.linked_minecraft_uuid = Set(msg.linked);
+                    }
                     model.update(&db).await
                 }
                 None => {
+                    let (account, minecraft_uuid) = match msg.key {
+                        IdentityKey::Account(account) => (Some(account), None),
+                        IdentityKey::Minecraft(uuid) => (None, Some(uuid)),
+                    };
                     user::ActiveModel {
                         id: Set(msg.id),
-                        minecraft_uuid: Set(msg.minecraft_uuid),
+                        account: Set(account),
+                        minecraft_uuid: Set(minecraft_uuid),
+                        linked_minecraft_uuid: Set(msg.linked),
                         name: Set(msg.name),
                         created_at: Set(msg.at),
                         last_seen_at: Set(msg.at),
@@ -80,8 +99,8 @@ impl Handler<Identify> for Store {
     }
 }
 
-/// The user of a Minecraft UUID. Punishing an unseen UUID creates its user, as banning
-/// players who never connected always worked.
+/// The user of a Minecraft UUID: the account it is linked to, else the Minecraft user.
+/// Punishing an unseen UUID creates its user, as banning players who never connected always worked.
 #[derive(Message)]
 #[rtype(result = "Result<Option<user::Model>, DbErr>")]
 pub struct MinecraftUser {
@@ -94,15 +113,22 @@ impl Handler<MinecraftUser> for Store {
 
     fn handle(&mut self, msg: MinecraftUser, _ctx: &mut Context<Self>) -> Self::Result {
         atomic!(self, db => {
-            let existing = user::Entity::find()
-                .filter(user::Column::MinecraftUuid.eq(msg.uuid))
+            let linked = user::Entity::find()
+                .filter(user::Column::LinkedMinecraftUuid.eq(msg.uuid))
+                .filter(user::Column::Account.is_not_null())
                 .one(&db)
                 .await?;
+            let existing = match linked {
+                Some(account) => Some(account),
+                None => user::Entity::find().filter(user::Column::MinecraftUuid.eq(msg.uuid)).one(&db).await?,
+            };
             match (existing, msg.create) {
                 (None, Some((id, at))) => {
                     let user = user::ActiveModel {
                         id: Set(id),
-                        minecraft_uuid: Set(msg.uuid),
+                        account: Set(None),
+                        minecraft_uuid: Set(Some(msg.uuid)),
+                        linked_minecraft_uuid: Set(None),
                         name: Set(msg.uuid.hyphenated().to_string()),
                         created_at: Set(at),
                         last_seen_at: Set(at),

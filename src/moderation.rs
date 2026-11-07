@@ -1,12 +1,7 @@
 use crate::entity::punishment::{self, Kind};
-use crate::error::*;
 use crate::ip::Cidr;
 
-use std::collections::HashSet;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::net::IpAddr;
-use std::path::Path;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -61,18 +56,12 @@ impl Punishment {
 }
 
 pub struct Moderation {
-    /// Minecraft UUIDs of the staff.
-    moderators: HashSet<Uuid>,
     punishments: Vec<Punishment>,
 }
 
 impl Moderation {
-    pub fn new(moderators: HashSet<Uuid>, punishments: Vec<Punishment>) -> Moderation {
-        Moderation { moderators, punishments }
-    }
-
-    pub fn is_moderator(&self, minecraft_uuid: &Uuid) -> bool {
-        self.moderators.contains(minecraft_uuid)
+    pub fn new(punishments: Vec<Punishment>) -> Moderation {
+        Moderation { punishments }
     }
 
     /// The longest-lasting punishment of `kind` covering the user or the address; a ban also mutes.
@@ -105,27 +94,6 @@ impl Moderation {
     }
 }
 
-/// Reads line-separated UUIDs, creating the file if it is missing.
-pub fn read_ids(path: &Path) -> Result<HashSet<Uuid>> {
-    let file = match File::open(path) {
-        Ok(file) => file,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            File::create(path)?;
-            return Ok(HashSet::new());
-        }
-        Err(err) => return Err(err.into()),
-    };
-    let mut ids = HashSet::new();
-    for line in BufReader::new(file).lines() {
-        let line = line?;
-        let line = line.trim();
-        if !line.is_empty() {
-            ids.insert(line.parse()?);
-        }
-    }
-    Ok(ids)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,7 +117,7 @@ mod tests {
         let (alice, bob) = (Uuid::from_u128(1), Uuid::from_u128(2));
         let home: IpAddr = "203.0.113.7".parse().unwrap();
         let v6: IpAddr = "2001:db8:1:2::1".parse().unwrap();
-        let mut moderation = Moderation::new(HashSet::new(), Vec::new());
+        let mut moderation = Moderation::new(Vec::new());
         moderation.add(punishment(Kind::Mute, Some(alice), None, Some(100)));
         moderation.add(punishment(Kind::Ban, None, Some("2001:db8:1:2::/64"), None));
 
