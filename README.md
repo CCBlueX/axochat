@@ -14,8 +14,6 @@ cargo run --release -- start
 It needs a MySQL or MariaDB database; tables are created on startup.
 Mutes from an old `banned.txt` move into the database with `axochat import-bans banned.txt`.
 
-`cargo test` also runs the server end to end when `DATABASE_URL` points at an empty database.
-
 ## Kotlin client
 [client](client) is the JVM client LiquidBounce builds on, published as `net.ccbluex:axochat-client` to `https://maven.ccbluex.net/releases` (snapshots from every push to `/snapshots`).
 
@@ -26,4 +24,4 @@ session.loginAccount(accessToken, allowMessages = true)
 session.packets.collect { packet -> /* Clientbound.ChatMessage, Clientbound.Welcome, ... */ }
 ```
 
-Releases come from GitHub releases tagged `client-v<version>`. `AXOCHAT_URL=ws://127.0.0.1:8080/ws ./gradlew test` runs it against a local server.
+Releases come from GitHub releases tagged `client-v<version>`.

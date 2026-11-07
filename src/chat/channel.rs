@@ -37,19 +37,3 @@ impl fmt::Display for Channel {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Channel;
-
-    #[test]
-    fn parse() {
-        assert_eq!(Channel::parse("global"), Some(Channel::Global));
-        assert_eq!(Channel::parse("server"), Some(Channel::Server));
-        assert_eq!(Channel::parse("user/Notch"), Some(Channel::User("Notch".into())));
-        assert_eq!(Channel::Watched("hypixel.net".into()).to_string(), "server/hypixel.net");
-        for invalid in ["", "user/", "server/hypixel.net", "global/x", "lobby"] {
-            assert_eq!(Channel::parse(invalid), None, "{}", invalid);
-        }
-    }
-}

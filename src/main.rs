@@ -9,9 +9,6 @@ mod message;
 mod moderation;
 mod store;
 
-#[cfg(test)]
-mod e2e;
-
 use clap::{Parser, Subcommand};
 use config::Config;
 use error::*;

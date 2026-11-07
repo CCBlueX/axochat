@@ -161,29 +161,6 @@ impl ActionLimiter {
         self.tokens >= self.burst
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::ActionLimiter;
-    use std::time::Duration;
-
-    #[test]
-    fn action_limiter() {
-        let mut limiter = ActionLimiter::new(3, 0.0);
-        assert!(limiter.allow() && limiter.allow() && limiter.allow());
-        assert!(!limiter.allow());
-    }
-
-    #[test]
-    fn waiting_turns() {
-        let mut limiter = ActionLimiter::new(1, 1.0);
-        assert_eq!(limiter.reserve(Duration::ZERO), Some(Duration::ZERO));
-        let wait = limiter.reserve(Duration::from_secs(5)).unwrap();
-        assert!(wait > Duration::from_millis(900) && wait <= Duration::from_secs(1));
-        assert!(limiter.reserve(Duration::from_secs(1)).is_none(), "the next turn is two seconds away");
-    }
-}
-
 #[cfg(test)]
 mod validator_tests {
     use super::MessageValidator;

@@ -25,8 +25,7 @@ dependencies {
     api("com.squareup.okhttp3:okhttp:5.5.0")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-}
+    }
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21

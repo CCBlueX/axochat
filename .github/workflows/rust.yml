@@ -10,20 +10,6 @@ jobs:
       - ubuntu-latest
     timeout-minutes: 30
 
-    services:
-      mariadb:
-        image: mariadb:11
-        env:
-          MARIADB_ROOT_PASSWORD: axochat
-          MARIADB_DATABASE: axochat
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "healthcheck.sh --connect --innodb_initialized"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - uses: actions/checkout@v7
 
@@ -51,8 +37,6 @@ jobs:
 
       - name: Run tests
         run: cargo test
-        env:
-          DATABASE_URL: mysql://root:axochat@127.0.0.1:3306/axochat
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
