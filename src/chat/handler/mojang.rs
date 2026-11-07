@@ -1,14 +1,16 @@
-use super::login::{identify, Verified};
+use super::login::{identify, Verified, Visit};
+use crate::api::Api;
 use crate::chat::world::Player;
 use crate::chat::{ChatServer, ClientPacket, InternalId, Kind, Login, Protocol, SuccessReason, User, UserId};
 use crate::error::ClientError;
-use crate::store::IdentityKey;
+use crate::store::{IdentityKey, Store};
 use log::*;
 
 use crate::auth::{authenticate, AuthInfo};
 use actix::*;
 use rand::Rng;
 use std::str::FromStr;
+use std::sync::Arc;
 use uuid::Uuid;
 
 impl ChatServer {
@@ -51,29 +53,7 @@ impl ChatServer {
                 actix::clock::sleep(delay).await;
                 let _permit = logins.acquire().await;
                 let profile = verify(&session_url, user_id, &info, &session_hash).await?;
-
-                // a Minecraft account linked to a LiquidBounce Account logs in as that account
-                let linked = api.linked_account(info.uuid).await.unwrap_or_else(|err| {
-                    warn!("Could not look up the account linked to `{}`: {}", info.uuid, err);
-                    None
-                });
-                let (request, roles, minecraft) = match linked {
-                    Some(account) => (
-                        visit.identify(
-                            IdentityKey::Account(account.user_id),
-                            account.nickname.unwrap_or_else(|| profile.name.clone()),
-                            Some(info.uuid),
-                        ),
-                        account.roles,
-                        Some(Player {
-                            uuid: info.uuid,
-                            name: profile.name,
-                        }),
-                    ),
-                    None => (visit.identify(IdentityKey::Minecraft(info.uuid), profile.name, None), Vec::new(), None),
-                };
-                let model = identify(store, request).await?;
-                Ok(Verified { model, roles, minecraft, service: false })
+                login_minecraft(api, store, visit, Player { uuid: info.uuid, name: profile.name }).await
             }
             .into_actor(self)
             .map(move |result, actor, _ctx| actor.finish_login(user_id, result, allow_messages)),
@@ -116,6 +96,33 @@ impl ChatServer {
             }),
         );
     }
+}
+
+/// A Minecraft account linked to a LiquidBounce Account logs in as that account.
+pub(super) async fn login_minecraft(
+    api: Arc<Api>,
+    store: Addr<Store>,
+    visit: Visit,
+    player: Player,
+) -> Result<Verified, ClientError> {
+    let linked = api.linked_account(player.uuid).await.unwrap_or_else(|err| {
+        warn!("Could not look up the account linked to `{}`: {}", player.uuid, err);
+        None
+    });
+    let (request, roles, minecraft) = match linked {
+        Some(account) => (
+            visit.identify(
+                IdentityKey::Account(account.user_id),
+                account.nickname.unwrap_or_else(|| player.name.clone()),
+                Some(player.uuid),
+            ),
+            account.roles,
+            Some(player),
+        ),
+        None => (visit.identify(IdentityKey::Minecraft(player.uuid), player.name, None), Vec::new(), None),
+    };
+    let model = identify(store, request).await?;
+    Ok(Verified { model, roles, minecraft, service: false })
 }
 
 async fn verify(session_url: &str, user_id: InternalId, info: &User, session_hash: &str) -> Result<AuthInfo, ClientError> {

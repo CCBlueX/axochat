@@ -2,7 +2,6 @@ use super::world::Player;
 use super::{Frame, Identity, Kind};
 use crate::entity::punishment;
 use crate::error::ClientError;
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,6 +19,9 @@ pub enum Protocol {
 pub enum ClientPacket {
     MojangInfo {
         session_hash: String,
+    },
+    NewJWT {
+        token: String,
     },
     Message {
         author_info: UserInfo,
@@ -176,7 +178,7 @@ impl ClientPacket {
 pub enum ServerPacket {
     RequestMojangInfo,
     LoginMojang(User),
-    LoginJWT(IgnoredAny),
+    LoginJWT { token: String, allow_messages: bool },
     LoginAccount { token: String, allow_messages: bool },
     RequestJWT,
     Message { content: String },

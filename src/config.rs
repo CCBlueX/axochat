@@ -1,5 +1,6 @@
 use crate::ip::TrustedProxy;
 use clap::Args;
+use jsonwebtoken::Algorithm;
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 #[derive(Args, Clone)]
@@ -24,6 +25,9 @@ pub struct Config {
 
     #[command(flatten)]
     pub service: ServiceConfig,
+
+    #[command(flatten)]
+    pub auth: AuthConfig,
 }
 
 #[derive(Args, Clone)]
@@ -35,6 +39,26 @@ pub struct ServiceConfig {
     /// The name of the account the service token logs in as.
     #[arg(id = "service_name", long = "service-name", env = "SERVICE_NAME", default_value = "LiquidChat")]
     pub name: String,
+}
+
+#[derive(Args, Clone)]
+pub struct AuthConfig {
+    /// The key of the JWT. JWT login is disabled without it.
+    #[arg(
+        long = "jwt-secret",
+        env = "JWT_SECRET",
+        hide_env_values = true,
+        requires = "valid_time"
+    )]
+    pub secret: Option<String>,
+
+    /// The JWT algorithm
+    #[arg(long = "jwt-algorithm", env = "JWT_ALGORITHM", default_value = "HS256")]
+    pub algorithm: Algorithm,
+
+    /// The time for which a JWT is valid
+    #[arg(long = "jwt-valid-time", env = "JWT_VALID_TIME", value_parser = humantime::parse_duration)]
+    pub valid_time: Option<Duration>,
 }
 
 #[derive(Args, Clone)]

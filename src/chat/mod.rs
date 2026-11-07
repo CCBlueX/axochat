@@ -14,6 +14,7 @@ use channel::Channel;
 use world::{Location, Player};
 
 use crate::api::{Api, RoleDefinition};
+use crate::auth::Authenticator;
 use crate::config::Config;
 use crate::entity::user;
 use crate::error::ClientError;
@@ -110,6 +111,7 @@ pub struct ChatServer {
     store: Addr<Store>,
     api: Arc<Api>,
     logins: Arc<Semaphore>,
+    authenticator: Option<Authenticator>,
     /// In the order of the Service API, which is the order prefixes are shown in.
     roles: Vec<RoleDefinition>,
     login_pace: HashMap<IpAddr, ActionLimiter>,
@@ -138,6 +140,7 @@ impl ChatServer {
             store,
             api: Arc::new(Api::new(&config.api)),
             logins: Arc::new(Semaphore::new(CONCURRENT_LOGINS)),
+            authenticator: Authenticator::new(&config.auth),
             roles: Vec::new(),
             login_pace: HashMap::new(),
             rng: Hc128Rng::try_from_rng(&mut SysRng).expect("could not initialize hc128 rng"),

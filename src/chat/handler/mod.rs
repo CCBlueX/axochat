@@ -32,8 +32,11 @@ impl Handler<ServerPacketId> for ChatServer {
             ServerPacket::LoginAccount { token, allow_messages } => {
                 self.login_account(user_id, token, allow_messages, ctx);
             }
-            ServerPacket::RequestJWT | ServerPacket::LoginJWT(_) => {
-                self.handle_jwt(user_id);
+            ServerPacket::RequestJWT => {
+                self.handle_request_jwt(user_id);
+            }
+            ServerPacket::LoginJWT { token, allow_messages } => {
+                self.login_jwt(user_id, &token, allow_messages, ctx);
             }
             ServerPacket::Message { content } => self.handle_message(user_id, content),
             ServerPacket::ChatMessage { channel, content } => self.handle_chat_message(user_id, channel, content),

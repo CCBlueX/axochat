@@ -87,6 +87,21 @@ after authenticating itself with mojang.
 }
 ```
 
+### NewJWT
+After the client sent the server a [RequestJWT](#requestjwt)
+packet, the server will provide the client with json web token.
+This token can be used in the [LoginJWT](#loginjwt) packet.
+
+**Example**
+```json
+{
+    "m": "NewJWT",
+    "c": {
+        "token": "VGhpcyBjb3VsZCBiZSBhIGpzb24gd2ViIHRva2VuLCBidXQgaXQgaXNuJ3QK"
+    }
+}
+```
+
 ### PrivateMessage
 The content of this packet will be sent to a logged in client with `allow_messages` turned on,
 if another client successfully [sent a private message](#privatemessage-1).
@@ -110,8 +125,8 @@ if another client successfully [sent a private message](#privatemessage-1).
 
 ### Success
 This packet is sent after either
-[LoginMojang](#loginmojang), [BanUser](#banuser) or [UnbanUser](#unbanuser)
-were processed successfully.
+[LoginMojang](#loginmojang), [LoginJWT](#loginjwt), [BanUser](#banuser) or
+[UnbanUser](#unbanuser) were processed successfully.
 
 - `reason` is the reason for the success; it is one of the following possible
   values:
@@ -166,8 +181,25 @@ Staff can send this packet to mute users.
 ```
 
 ### LoginJWT
-No longer supported and answered with the error `NotSupported`; log in with
-[LoginAccount](#loginaccount) instead.
+To login using a json web token, the client has to send a `LoginJWT` packet.
+The server will send [Success](#success) if the login was successful,
+or the error `Banned` if the user or its address is banned.
+
+- `token` can be retrieved by sending [RequestJWT](#requestjwt) on an already
+  authenticated connection.
+- If `allow_messages` is true, other clients may send private messages
+  to this client.
+
+**Example**
+```json
+{
+    "m": "LoginJWT",
+    "c": {
+        "token": "VGhpcyBjb3VsZCBiZSBhIGpzb24gd2ViIHRva2VuLCBidXQgaXQgaXNuJ3QK",
+        "allow_messages": true
+    }
+}
+```
 
 ### LoginMojang
 After the client received a [MojangInfo](#mojanginfo) packet
@@ -226,7 +258,19 @@ as [PrivateMessage](#privatemessage) if it fits the validation scheme.
 ```
 
 ### RequestJWT
-No longer supported and answered with the error `NotSupported`.
+To login using [LoginJWT](#loginjwt), a client needs to own a json web token.
+This token can be retrieved by sending `RequestJWT` as an already authenticated
+client to the server.
+The server will send a [NewJWT](#newjwt) packet to the client.
+
+This packet has no body.
+
+**Example**
+```json
+{
+    "m": "RequestJWT"
+}
+```
 
 ### RequestMojangInfo
 To login via mojang, the client has to send a `RequestMojangInfo` packet.
