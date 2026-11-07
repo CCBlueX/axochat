@@ -29,6 +29,6 @@ RUN apt-get update \
 COPY --from=builder /app/axochat /app/axochat
 WORKDIR /data
 
-EXPOSE 8080
+EXPOSE 80 443 7886
 ENTRYPOINT ["/app/axochat"]
 CMD ["start"]
