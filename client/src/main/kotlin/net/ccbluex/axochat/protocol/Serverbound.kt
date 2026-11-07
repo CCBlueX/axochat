@@ -102,6 +102,29 @@ public sealed interface Serverbound {
     public data class RequestPunishments(val user: String) : Serverbound
 
     /**
+     * Reports [user] (an id or a name) to staff, answered with [SuccessReason.Report].
+     *
+     * @param message the id of a message of [user] the reporter received
+     */
+    @Serializable
+    @SerialName("Report")
+    public data class Report(val user: String, val message: Long? = null, val reason: String) : Serverbound
+
+    /**
+     * Staff only. Answered with [Clientbound.Reports].
+     */
+    @Serializable
+    @SerialName("RequestReports")
+    public data object RequestReports : Serverbound
+
+    /**
+     * Staff only.
+     */
+    @Serializable
+    @SerialName("ResolveReport")
+    public data class ResolveReport(val id: String) : Serverbound
+
+    /**
      * Staff only.
      */
     @Serializable

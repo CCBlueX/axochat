@@ -4,6 +4,7 @@ package net.ccbluex.axochat.user
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
+import net.ccbluex.axochat.protocol.Channel
 import net.ccbluex.axochat.protocol.PunishmentKind
 import net.ccbluex.axochat.protocol.UuidSerializer
 import java.util.UUID
@@ -72,4 +73,22 @@ public data class Punishment(
     val issuedBy: String? = null,
     val created: Long,
     val expires: Long? = null,
+)
+
+/**
+ * @param channel where the reported message went, as the target saw it
+ * @param message the id of the reported message
+ * @param content the reported message
+ * @param time milliseconds since the Unix epoch
+ */
+@Serializable
+public data class ReportView(
+    val id: String,
+    val reporter: UserRef,
+    val target: UserRef,
+    val channel: Channel? = null,
+    val message: Long? = null,
+    val content: String? = null,
+    val reason: String,
+    val time: Long,
 )

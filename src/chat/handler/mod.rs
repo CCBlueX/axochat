@@ -7,6 +7,7 @@ mod login;
 mod message;
 mod mojang;
 mod punish;
+mod report;
 
 use super::{ChatServer, ClientPacket, ServerPacket, ServerPacketId};
 
@@ -76,6 +77,11 @@ impl Handler<ServerPacketId> for ChatServer {
             ServerPacket::RequestPunishments { user } => {
                 self.handle_request_punishments(user_id, user, ctx);
             }
+            ServerPacket::Report { user, message, reason } => {
+                self.handle_report(user_id, user, message, reason, ctx);
+            }
+            ServerPacket::RequestReports => self.handle_request_reports(user_id, ctx),
+            ServerPacket::ResolveReport { id } => self.handle_resolve_report(user_id, id),
             ServerPacket::RequestUserCount => {
                 self.send_user_count(user_id);
             }
