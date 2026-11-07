@@ -17,7 +17,7 @@ Mutes from an old `banned.txt` move into the database with `axochat import-bans 
 `cargo test` also runs the server end to end when `DATABASE_URL` points at an empty database.
 
 ## Kotlin client
-[client](client) is the JVM client LiquidBounce builds on, published as `net.ccbluex:axochat-client` to `https://maven.ccbluex.net/releases` (snapshots of master to `/snapshots`).
+[client](client) is the JVM client LiquidBounce builds on, published as `net.ccbluex:axochat-client` to `https://maven.ccbluex.net/releases` (snapshots from every push to `/snapshots`).
 
 ```kotlin
 val session = AxochatClient(URI("ws://127.0.0.1:8080/ws")).connect()
