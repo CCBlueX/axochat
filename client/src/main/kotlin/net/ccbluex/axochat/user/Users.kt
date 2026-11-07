@@ -31,6 +31,7 @@ public data class Role(val id: String, val name: String, val staff: Boolean)
  * @param uuid the Minecraft account shown as their head, nil if unknown
  * @param minecraft the Minecraft account an account session proved it plays on
  * @param roles staff roles first
+ * @param highlight staff and perk roles stand out
  */
 @Serializable
 public data class Author(
@@ -40,6 +41,7 @@ public data class Author(
     val uuid: UUID,
     val minecraft: Player? = null,
     val roles: List<Role> = emptyList(),
+    val highlight: Boolean = false,
 ) {
     val isAccount: Boolean get() = kind == UserKind.Account
 }

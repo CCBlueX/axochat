@@ -45,6 +45,9 @@ impl Handler<ServerPacketId> for ChatServer {
             ServerPacket::PrivateMessage { receiver, content } => {
                 self.handle_private_message(user_id, receiver, content);
             }
+            ServerPacket::ChatMessage { channel, content } => {
+                self.handle_chat_message(user_id, channel, content);
+            }
             ServerPacket::BanUser { user } => {
                 self.ban_user(user_id, user, ctx);
             }

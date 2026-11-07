@@ -1,9 +1,14 @@
+mod channel;
 mod connect;
 mod handler;
+mod history;
 mod id;
 mod session;
 
 pub use id::*;
+
+use channel::{Channel, Target};
+use history::History;
 
 use crate::config::Config;
 use crate::error::*;
@@ -61,6 +66,7 @@ pub struct ChatServer {
     moderation: Moderation,
     store: Addr<Store>,
     config: Config,
+    history: History,
 
     current_internal_user_id: u64,
 }
@@ -79,6 +85,7 @@ impl ChatServer {
             moderation,
             store,
             config,
+            history: History::new(),
 
             current_internal_user_id: 0,
         }
@@ -188,17 +195,17 @@ impl ChatServer {
         self.users.get(&stored_id)
     }
 
-    /// Names are not unique: a Minecraft player keeps their name against an account named alike.
-    fn find_by_name(&self, name: &str) -> Option<&UserSession> {
+    /// Names are not unique: an account and Minecraft players may share one.
+    fn find_by_name<'a>(&'a self, name: &'a str) -> impl Iterator<Item = (Uuid, &'a UserSession)> + 'a {
         self.users
-            .values()
-            .filter(|user| {
+            .iter()
+            .filter(move |(_, user)| {
                 user.connections
                     .iter()
                     .find_map(|id| self.connections.get(id)?.user.as_ref())
                     .is_some_and(|info| info.name == name)
             })
-            .min_by_key(|user| user.kind == Kind::Account)
+            .map(|(id, user)| (*id, user))
     }
 
     fn author(&self, user_id: InternalId) -> Option<Author> {
@@ -230,6 +237,7 @@ impl ChatServer {
             uuid: info.uuid,
             minecraft: session.minecraft.clone().filter(|_| online.kind == Kind::Account),
             roles,
+            highlight: self.has_perks(user_id),
         })
     }
 }
@@ -241,6 +249,18 @@ impl Handler<Disconnect> for ChatServer {
         info!("User `{}` disconnected.", msg.id);
         self.logout(msg.id);
         self.connections.remove(&msg.id);
+    }
+}
+
+impl Handler<Malformed> for ChatServer {
+    type Result = ();
+
+    fn handle(&mut self, msg: Malformed, _ctx: &mut Context<Self>) {
+        warn!("Could not decode packet of `{}`: {}", msg.id, msg.error);
+        // old clients never got an answer to these
+        if self.connections.get(&msg.id).is_some_and(|session| session.hello) {
+            self.send_error(msg.id, ClientError::InvalidPacket(msg.error));
+        }
     }
 }
 
@@ -285,6 +305,13 @@ struct Disconnect {
     id: InternalId,
 }
 
+#[derive(Message)]
+#[rtype(result = "()")]
+struct Malformed {
+    id: InternalId,
+    error: String,
+}
+
 /// A clientbound packet
 #[derive(Message, Serialize, Clone)]
 #[rtype(result = "()")]
@@ -327,6 +354,13 @@ enum ClientPacket {
         user: Author,
         staff: bool,
     },
+    ChatMessage {
+        channel: Channel,
+        id: u64,
+        time: i64,
+        author: Author,
+        content: String,
+    },
 }
 
 #[derive(Serialize, Clone)]
@@ -341,6 +375,8 @@ struct Author {
     #[serde(skip_serializing_if = "Option::is_none")]
     minecraft: Option<UserInfo>,
     roles: Vec<RoleView>,
+    /// Staff and perk roles stand out.
+    highlight: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -366,6 +402,7 @@ enum ServerPacket {
     BanUser { user: Uuid },
     UnbanUser { user: Uuid },
     RequestUserCount,
+    ChatMessage { channel: Target, content: String },
 }
 
 #[derive(Message)]

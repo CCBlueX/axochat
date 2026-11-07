@@ -67,5 +67,22 @@ public sealed interface Clientbound {
     @SerialName("Welcome")
     public data class Welcome(val user: Author, val staff: Boolean) : Clientbound
 
+    /**
+     * Replaces [Message] and [PrivateMessage] for clients that sent [Serverbound.Hello].
+     *
+     * @param channel for a direct message the other side: the sender, or the receiver in the echo to the sender
+     * @param id counts up during a server run
+     * @param time milliseconds since the Unix epoch
+     */
+    @Serializable
+    @SerialName("ChatMessage")
+    public data class ChatMessage(
+        val channel: Channel,
+        val id: Long,
+        val time: Long,
+        val author: Author,
+        val content: String,
+    ) : Clientbound
+
     public data class Unknown(val name: String, val content: JsonElement?) : Clientbound
 }
