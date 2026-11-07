@@ -2,16 +2,18 @@ use log::*;
 
 use super::{ChatServer, ClientPacket, InternalId, SessionState};
 use actix::*;
+use std::net::IpAddr;
 
 #[derive(Message)]
 #[rtype(InternalId)]
 pub(super) struct Connect {
     addr: Recipient<ClientPacket>,
+    ip: IpAddr,
 }
 
 impl Connect {
-    pub fn new(addr: Recipient<ClientPacket>) -> Connect {
-        Connect { addr }
+    pub fn new(addr: Recipient<ClientPacket>, ip: IpAddr) -> Connect {
+        Connect { addr, ip }
     }
 }
 
@@ -24,12 +26,14 @@ impl Handler<Connect> for ChatServer {
         self.connections.insert(
             id,
             SessionState {
-                addr: msg.addr.clone(),
+                addr: msg.addr,
+                ip: msg.ip,
                 session_hash: None,
                 user: None,
+                stored_id: None,
             },
         );
-        debug!("User `{}` joined the chat.", id);
+        debug!("User `{}` joined the chat from {}.", id, msg.ip);
         id
     }
 }
