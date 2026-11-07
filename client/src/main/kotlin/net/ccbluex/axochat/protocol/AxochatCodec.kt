@@ -34,6 +34,7 @@ public object AxochatCodec {
         entry(Serverbound.BanUser.serializer()),
         entry(Serverbound.UnbanUser.serializer()),
         entry(Serverbound.RequestUserCount.serializer()),
+        entry(Serverbound.ChatMessage.serializer()),
     ).toMap()
 
     private val clientbound: Map<String, KSerializer<out Clientbound>> = listOf(
@@ -46,6 +47,7 @@ public object AxochatCodec {
         Clientbound.Success.serializer(),
         Clientbound.Error.serializer(),
         Clientbound.Welcome.serializer(),
+        Clientbound.ChatMessage.serializer(),
     ).associateBy { it.descriptor.serialName }
 
     private inline fun <reified T : Serverbound> entry(serializer: KSerializer<T>) =

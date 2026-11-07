@@ -11,8 +11,10 @@ All packets are sent to the `/ws` endpoint.
     - [UserInfo](#userinfo)
 - [Handshake](#handshake)
 - [Minecraft proof](#minecraft-proof)
+- [Channels](#channels)
 - [Packets](#packets)
     - [Client](#client)
+        - [ChatMessage](#chatmessage)
         - [Error](#error)
         - [Hello](#hello)
         - [Message](#message)
@@ -24,6 +26,7 @@ All packets are sent to the `/ws` endpoint.
         - [Welcome](#welcome)
     - [Server](#server)
         - [BanUser](#banuser)
+        - [ChatMessage](#chatmessage-1)
         - [Hello](#hello-1)
         - [LoginAccount](#loginaccount)
         - [LoginJWT](#loginjwt)
@@ -42,6 +45,7 @@ A client may send [Hello](#hello-1) before logging in to announce the newest pro
 The server answers with [Hello](#hello) and the protocol both sides use.
 Clients that announce protocol 2 or newer get the packets added since, such as [Welcome](#welcome),
 and [Error](#error) packets with a `detail`.
+They chat with [ChatMessage](#chatmessage-1) and get every message as [ChatMessage](#chatmessage).
 Clients that send no `Hello` keep the original protocol, and servers that do not know `Hello` ignore it,
 so a client that gets no answer within a few seconds uses the original protocol.
 
@@ -54,6 +58,19 @@ The server answers with [Welcome](#welcome) (after a [handshake](#handshake)), n
 and [Success](#success) with `Minecraft`; or with an [Error](#error), such as `LoginFailed` or `InvalidId`,
 and the session stays logged in as before.
 The proof lasts until the session ends.
+
+# Channels
+[ChatMessage](#chatmessage) packets name their channel as an object with a `type`:
+
+- `{"type": "global"}` reaches everyone.
+- `{"type": "direct", "user": "..."}` is a direct message between two LiquidBounce Accounts.
+  When sending, `user` is the id or the name of an account that is online.
+  The receiver gets the sender's id as `user`, and the sender's other connections after a handshake
+  get the message with the receiver's id.
+
+Clients without a handshake keep getting [Message](#message) and [PrivateMessage](#privatemessage),
+also for messages sent as [ChatMessage](#chatmessage-1).
+Clients should ignore messages in channels they do not know.
 
 # Packets
 Packets are sent in websocket `text` messages encoded as JSON objects.
@@ -78,16 +95,50 @@ Not every packet has a body:
 ## Client
 Client Packets are received by the client.
 
+### ChatMessage
+A message in a [channel](#channels), sent instead of [Message](#message) and [PrivateMessage](#privatemessage)
+to clients after a [handshake](#handshake).
+
+- `channel` is where the message went, as the receiver sees it.
+- `id` identifies the message; ids grow with every message until the server restarts.
+- `time` is when the server got the message, in milliseconds since the Unix epoch.
+- `author` is the sender, as `user` in [Welcome](#welcome).
+- `content` is the message, see [Message](#message).
+
+**Example**
+```json
+{
+    "m": "ChatMessage",
+    "c": {
+        "channel": { "type": "direct", "user": "0190c3a2-5f1e-7c4b-9d2a-1b3c4d5e6f70" },
+        "id": 4182,
+        "time": 1791446400000,
+        "author": {
+            "id": "0190c3a2-5f1e-7c4b-9d2a-1b3c4d5e6f70",
+            "kind": "account",
+            "name": "Notch",
+            "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+            "roles": [],
+            "highlight": false
+        },
+        "content": "Hello, User!"
+    }
+}
+```
+
 ### Error
 This packet may be sent at any time,
 but is usually a response to a failed action of the client.
 
 - `message` is the error code.
 - `detail` is only sent after a [handshake](#handshake), and only for errors that have one,
-  like the character of `InvalidCharacter`.
+  like the character of `InvalidCharacter`, the type of `UnknownChannel` or the reason of `InvalidPacket`.
 
 Without a handshake, `InvalidCharacter` is sent as an object holding the character:
 `"message": {"InvalidCharacter": "§"}`.
+
+After a handshake, packets the server cannot decode are answered with `InvalidPacket`;
+the connection stays open.
 
 **Example**
 ```json
@@ -117,6 +168,7 @@ The answer to [Hello](#hello-1).
 ### Message
 This packet will be sent to every authenticated client,
 if another client successfully [sent a message](#message-1) to the server.
+Clients after a [handshake](#handshake) get [ChatMessage](#chatmessage) instead.
 
 - `author_info` is just the name and uuid of the user that sent the message.
   For a LiquidBounce Account, `uuid` is its linked Minecraft account, or the nil uuid if there is none.
@@ -173,6 +225,7 @@ This token can be used in the [LoginJWT](#loginjwt) packet.
 ### PrivateMessage
 The content of this packet will be sent to a authenticated client with `allow_messages` turned on,
 if another client successfully [sent a private message](#privatemessage-1).
+Clients after a [handshake](#handshake) get [ChatMessage](#chatmessage) instead.
 
 - `author_info` is just the name and uuid of the user that sent the message.
 - `content` is any message fitting the validation scheme of the server.
@@ -242,6 +295,7 @@ Sent after a successful login, right before [Success](#success), to clients afte
   - `minecraft` is the `name` and `uuid` of the Minecraft account the session proved it plays on,
     left out without a [Minecraft proof](#minecraft-proof).
   - `roles` are the roles of the account, staff roles first: `id`, display `name` and whether it is a `staff` role.
+  - `highlight` tells whether the user's messages stand out, for staff and perk roles.
 - `staff` tells whether the user may moderate.
 
 Clients should ignore fields and values they do not know.
@@ -280,6 +334,25 @@ Banned users are logged out and cannot log in again; they get an `Error` with `B
     "m": "BanUser",
     "c": {
         "user": "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+    }
+}
+```
+
+### ChatMessage
+Sends `content` to a [channel](#channels), after a [handshake](#handshake).
+It must fit the validation scheme described at [Message](#message).
+
+- `{"type": "direct"}` needs a LiquidBounce Account, or the answer is `AccountRequired`.
+  `PrivateMessageNotAccepted` means the receiver is not an online account, or none of its connections allows messages.
+- An unknown `type` is answered with `UnknownChannel`.
+
+**Example**
+```json
+{
+    "m": "ChatMessage",
+    "c": {
+        "channel": { "type": "direct", "user": "Notch" },
+        "content": "Hello, Notch!"
     }
 }
 ```
@@ -383,7 +456,8 @@ as [Message](#message) if it fits the validation scheme.
 The `content` of this packet will be sent to the specified client
 as [PrivateMessage](#privatemessage) if it fits the validation scheme.
 
-- `receiver` is the name of the receiver.
+- `receiver` is the name of the receiver, which may also be a Minecraft account.
+  If nobody by that name accepts messages, the answer is `PrivateMessageNotAccepted`.
 
 **Example**
 ```json

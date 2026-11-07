@@ -1,5 +1,5 @@
 use super::{
-    connect::Connect, ChatServer, ClientPacket, Disconnect, InternalId, ServerPacket,
+    connect::Connect, ChatServer, ClientPacket, Disconnect, InternalId, Malformed, ServerPacket,
     ServerPacketId,
 };
 
@@ -126,9 +126,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Session {
                     user_id: self.id,
                     packet,
                 }),
-                Err(err) => {
-                    warn!("Could not decode packet: {}", err);
-                }
+                Err(err) => self.addr.do_send(Malformed {
+                    id: self.id,
+                    error: err.to_string(),
+                }),
             },
             ws::Message::Binary(_msg) => {
                 warn!("Can't decode binary messages.");

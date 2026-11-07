@@ -50,6 +50,13 @@ public sealed interface Serverbound {
     public data class PrivateMessage(val receiver: String, val content: String) : Serverbound
 
     /**
+     * After [Hello]: [Channel.Direct] needs a LiquidBounce Account on both sides.
+     */
+    @Serializable
+    @SerialName("ChatMessage")
+    public data class ChatMessage(val channel: Channel, val content: String) : Serverbound
+
+    /**
      * Staff only.
      */
     @Serializable

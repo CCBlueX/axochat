@@ -24,6 +24,9 @@ public value class ErrorCode(public val code: String) {
         public val MessageTooLong: ErrorCode = ErrorCode("MessageTooLong")
         public val InvalidCharacter: ErrorCode = ErrorCode("InvalidCharacter")
         public val InvalidId: ErrorCode = ErrorCode("InvalidId")
+        public val AccountRequired: ErrorCode = ErrorCode("AccountRequired")
+        public val UnknownChannel: ErrorCode = ErrorCode("UnknownChannel")
+        public val InvalidPacket: ErrorCode = ErrorCode("InvalidPacket")
         public val Internal: ErrorCode = ErrorCode("Internal")
     }
 }
