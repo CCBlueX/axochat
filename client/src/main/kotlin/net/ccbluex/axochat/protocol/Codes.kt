@@ -37,5 +37,6 @@ public value class SuccessReason(public val name: String) {
         public val Login: SuccessReason = SuccessReason("Login")
         public val Ban: SuccessReason = SuccessReason("Ban")
         public val Unban: SuccessReason = SuccessReason("Unban")
+        public val Minecraft: SuccessReason = SuccessReason("Minecraft")
     }
 }

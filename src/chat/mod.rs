@@ -228,6 +228,7 @@ impl ChatServer {
             kind: online.kind,
             name: info.name.clone(),
             uuid: info.uuid,
+            minecraft: session.minecraft.clone().filter(|_| online.kind == Kind::Account),
             roles,
         })
     }
@@ -250,7 +251,7 @@ pub(self) struct SessionState {
     /// Sent `Hello`, so it understands the packets added since the original protocol.
     hello: bool,
     user: Option<User>,
-    /// The Minecraft account a Mojang or JWT login proved.
+    /// The Minecraft account a Mojang or JWT login, or a proof after an account login, verified.
     minecraft: Option<UserInfo>,
     /// The id of the logged in user in the database.
     stored_id: Option<Uuid>,
@@ -336,6 +337,9 @@ struct Author {
     name: String,
     /// The Minecraft account shown for the user, nil if unknown.
     uuid: Uuid,
+    /// The Minecraft account an account session proved it plays on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    minecraft: Option<UserInfo>,
     roles: Vec<RoleView>,
 }
 
@@ -384,6 +388,8 @@ enum SuccessReason {
     Login,
     Ban,
     Unban,
+    /// An account session proved the Minecraft account it plays on.
+    Minecraft,
 }
 
 #[cfg(test)]
