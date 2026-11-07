@@ -19,9 +19,12 @@ pub struct Config {
 
 #[derive(Args, Clone)]
 pub struct NetConfig {
-    /// The address the server will listen at.
-    #[arg(long = "server-addr", env = "SERVER_ADDR", default_value = "0.0.0.0:8080")]
-    pub address: SocketAddr,
+    /// The addresses served over plain HTTP.
+    #[arg(long = "server-addr", env = "SERVER_ADDR", value_delimiter = ',', default_value = "0.0.0.0:80")]
+    pub address: Vec<SocketAddr>,
+    /// The addresses served over HTTPS, if a certificate is set. 7886 is where existing clients connect.
+    #[arg(long = "tls-addr", env = "TLS_ADDR", value_delimiter = ',', default_value = "0.0.0.0:443,0.0.0.0:7886")]
+    pub tls_address: Vec<SocketAddr>,
 
     /// The SSL certificate file.
     #[arg(long = "tls-cert-file", env = "TLS_CERT_FILE")]
