@@ -6,6 +6,9 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 #[derive(Args, Clone)]
 pub struct Config {
     #[command(flatten)]
+    pub api: ApiConfig,
+
+    #[command(flatten)]
     pub mojang: MojangConfig,
 
     #[command(flatten)]
@@ -65,6 +68,10 @@ pub struct MsgConfig {
         value_parser = humantime::parse_duration
     )]
     pub count_duration: Duration,
+
+    /// Service API roles that may use color codes and emoji; staff always may.
+    #[arg(long = "perk-roles", env = "PERK_ROLES", value_delimiter = ',', default_value = "premium")]
+    pub perk_roles: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -89,10 +96,6 @@ pub struct AuthConfig {
 
 #[derive(Args, Clone)]
 pub struct ModConfig {
-    /// The file containing the moderators (line separated).
-    #[arg(long = "moderators-file", env = "MODERATORS_FILE", default_value = "./moderators.txt")]
-    pub moderators: PathBuf,
-
     /// How long the last address of a user is kept after they were last seen.
     #[arg(
         long = "ip-retention",
@@ -119,4 +122,15 @@ pub struct MojangConfig {
         hide = true
     )]
     pub session_url: String,
+}
+
+#[derive(Args, Clone)]
+pub struct ApiConfig {
+    /// The LiquidBounce Service API, which checks account logins and knows their roles.
+    #[arg(id = "api_url", long = "api-url", env = "API_URL", default_value = "https://api.liquidbounce.net")]
+    pub url: String,
+
+    /// The Service API token for roles and linked Minecraft accounts.
+    #[arg(long = "api-token", env = "API_TOKEN", hide_env_values = true)]
+    pub token: Option<String>,
 }

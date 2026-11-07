@@ -13,12 +13,12 @@ impl ChatServer {
     /// The database id of the moderator behind a connection.
     fn moderator(&self, user_id: InternalId) -> Option<Uuid> {
         let session = self.connections.get(&user_id)?;
-        let (Some(info), Some(stored_id)) = (&session.user, session.stored_id) else {
+        let Some(stored_id) = session.stored_id else {
             info!("`{}` is not logged in.", user_id);
             self.send_error(user_id, ClientError::NotLoggedIn);
             return None;
         };
-        if !self.moderation.is_moderator(&info.uuid) {
+        if !self.is_staff(user_id) {
             info!("`{}` tried to (un-)ban user without permission", user_id);
             self.send_error(user_id, ClientError::NotPermitted);
             return None;
@@ -29,10 +29,6 @@ impl ChatServer {
     /// Bans the user of a Minecraft UUID permanently; they cannot log in until pardoned.
     pub(super) fn ban_user(&mut self, user_id: InternalId, uuid: Uuid, ctx: &mut Context<Self>) {
         let Some(staff) = self.moderator(user_id) else { return };
-        if self.moderation.is_moderator(&uuid) {
-            self.send_error(user_id, ClientError::NotPermitted);
-            return;
-        }
 
         let store = self.store.clone();
         let create = Some((new_id(&mut self.rng), now_ms()));
@@ -45,6 +41,11 @@ impl ChatServer {
                         actor.send_error(user_id, ClientError::Internal);
                         return;
                     };
+                    let target_is_staff = actor.users.get(&target.id).is_some_and(|user| actor.has_staff_role(&user.roles));
+                    if target_is_staff {
+                        actor.send_error(user_id, ClientError::NotPermitted);
+                        return;
+                    }
                     let already = actor.moderation.find(Kind::Ban, Some(target.id), None, now_ms());
                     if already.is_some_and(|ban| ban.expires_at.is_none()) {
                         actor.send(user_id, ClientPacket::Success { reason: SuccessReason::Ban });
@@ -108,8 +109,9 @@ impl ChatServer {
             let covered: Vec<InternalId> = self
                 .connections
                 .iter()
-                .filter(|(_, session)| {
-                    session.user.as_ref().is_some_and(|info| !self.moderation.is_moderator(&info.uuid))
+                .filter(|(id, session)| {
+                    session.is_logged_in()
+                        && !self.is_staff(**id)
                         && punishment.covers(session.stored_id, Some(session.ip))
                 })
                 .map(|(id, _)| *id)
@@ -121,11 +123,5 @@ impl ChatServer {
         }
 
         self.moderation.add(punishment);
-    }
-
-    fn send(&self, user_id: InternalId, packet: ClientPacket) {
-        if let Some(session) = self.connections.get(&user_id) {
-            crate::chat::send_message(&session.addr, packet, "moderation");
-        }
     }
 }

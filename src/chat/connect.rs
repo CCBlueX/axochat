@@ -29,7 +29,9 @@ impl Handler<Connect> for ChatServer {
                 addr: msg.addr,
                 ip: msg.ip,
                 session_hash: None,
+                hello: false,
                 user: None,
+                minecraft: None,
                 stored_id: None,
             },
         );
