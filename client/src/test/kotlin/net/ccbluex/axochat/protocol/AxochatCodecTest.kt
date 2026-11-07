@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class AxochatCodecTest {
 
@@ -38,5 +39,27 @@ class AxochatCodecTest {
         ))
         assertEquals(UserKind("robot"), welcome.user.kind)
         assertIs<Clientbound.Unknown>(AxochatCodec.decode("""{"m":"Later","c":{"x":1}}"""))
+    }
+
+    @Test
+    fun `channels travel as objects`() {
+        assertEquals(
+            """{"m":"ChatMessage","c":{"channel":{"type":"direct","user":"Notch"},"content":"hi"}}""",
+            AxochatCodec.encode(Serverbound.ChatMessage(Channel.Direct("Notch"), "hi")),
+        )
+        assertEquals(
+            """{"m":"ChatMessage","c":{"channel":{"type":"global"},"content":"hi"}}""",
+            AxochatCodec.encode(Serverbound.ChatMessage(Channel.Global, "hi")),
+        )
+
+        fun packet(channel: String) =
+            """{"m":"ChatMessage","c":{"channel":$channel,"id":7,"time":1,"content":"hi",""" +
+                """"author":{"id":"a","kind":"account","name":"A","uuid":"069a79f4-44e9-4726-a5be-fca90e38aaf5"}}}"""
+        fun received(channel: String) = assertIs<Clientbound.ChatMessage>(AxochatCodec.decode(packet(channel))).channel
+        assertEquals(Channel.Global, received("""{"type":"global"}"""))
+        assertEquals(Channel.Direct("b"), received("""{"type":"direct","user":"b"}"""))
+        assertEquals(Channel.Unknown("party"), received("""{"type":"party","id":3}"""))
+        assertNull(AxochatCodec.decodeOrNull(packet(""""global"""")))
+        assertNull(AxochatCodec.decodeOrNull(packet("""{"type":"direct"}""")))
     }
 }
