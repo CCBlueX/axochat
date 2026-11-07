@@ -11,6 +11,7 @@ use channel::{Channel, Target};
 use history::History;
 
 use crate::config::Config;
+use crate::entity::punishment::Kind as PunishmentKind;
 use crate::error::*;
 use log::*;
 
@@ -361,6 +362,34 @@ enum ClientPacket {
         author: Author,
         content: String,
     },
+    Punished {
+        kind: PunishmentKind,
+        reason: String,
+        expires: Option<i64>,
+    },
+    Punishments {
+        user: UserRef,
+        punishments: Vec<PunishmentView>,
+    },
+}
+
+#[derive(Serialize, Clone)]
+struct UserRef {
+    id: Uuid,
+    kind: Kind,
+    name: String,
+}
+
+#[derive(Serialize, Clone)]
+struct PunishmentView {
+    id: Uuid,
+    kind: PunishmentKind,
+    /// The range the punishment also covers.
+    ip: Option<String>,
+    reason: String,
+    issued_by: Option<Uuid>,
+    created: i64,
+    expires: Option<i64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -403,6 +432,19 @@ enum ServerPacket {
     UnbanUser { user: Uuid },
     RequestUserCount,
     ChatMessage { channel: Target, content: String },
+    Punish {
+        user: Option<String>,
+        ip: Option<String>,
+        kind: PunishmentKind,
+        /// In seconds; permanent without.
+        duration: Option<u64>,
+        reason: String,
+        /// Also covers the last address of the user.
+        #[serde(default)]
+        include_ip: bool,
+    },
+    Pardon { user: Option<String>, ip: Option<String> },
+    RequestPunishments { user: String },
 }
 
 #[derive(Message)]
@@ -427,11 +469,28 @@ enum SuccessReason {
     Unban,
     /// An account session proved the Minecraft account it plays on.
     Minecraft,
+    Punish,
+    Pardon,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientError, ClientPacket};
+    use super::{ClientError, ClientPacket, PunishmentKind, ServerPacket};
+
+    #[test]
+    fn moderation_wire_form() {
+        let punish = r#"{"m":"Punish","c":{"user":"Notch","kind":"mute","duration":60,"reason":"spam"}}"#;
+        let Ok(ServerPacket::Punish { user, ip, kind, duration, include_ip, .. }) = serde_json::from_str(punish) else {
+            panic!("could not decode Punish");
+        };
+        assert_eq!((user.as_deref(), ip, kind, duration, include_ip), (Some("Notch"), None, PunishmentKind::Mute, Some(60), false));
+
+        let punished = ClientPacket::Punished { kind: PunishmentKind::Ban, reason: "spam".into(), expires: None };
+        assert_eq!(
+            serde_json::to_string(&punished).unwrap(),
+            r#"{"m":"Punished","c":{"kind":"ban","reason":"spam","expires":null}}"#
+        );
+    }
 
     #[test]
     fn errors_keep_their_form() {

@@ -132,7 +132,8 @@ but is usually a response to a failed action of the client.
 
 - `message` is the error code.
 - `detail` is only sent after a [handshake](#handshake), and only for errors that have one,
-  like the character of `InvalidCharacter`, the type of `UnknownChannel` or the reason of `InvalidPacket`.
+  like the character of `InvalidCharacter`, the query of `UnknownUser`, the type of `UnknownChannel`
+  or the reason of `InvalidPacket`.
 
 Without a handshake, `InvalidCharacter` is sent as an object holding the character:
 `"message": {"InvalidCharacter": "§"}`.
@@ -244,10 +245,68 @@ Clients after a [handshake](#handshake) get [ChatMessage](#chatmessage) instead.
 }
 ```
 
+### Punished
+Sent to every logged in connection a [Punish](#punish) covers, after a [handshake](#handshake).
+After a ban, the connection is also logged out with an `Error` of `Banned`.
+While muted, messages are answered with `Muted` (`Banned` without a handshake).
+
+- `kind` is `mute` or `ban`.
+- `reason` is the reason staff gave.
+- `expires` is when the punishment ends, in milliseconds since the Unix epoch, `null` if it is permanent.
+
+**Example**
+```json
+{
+    "m": "Punished",
+    "c": {
+        "kind": "mute",
+        "reason": "Spam",
+        "expires": 1762520460000
+    }
+}
+```
+
+### Punishments
+The answer to [RequestPunishments](#requestpunishments).
+
+- `user` is the `id`, `kind` and `name` of the user.
+- `punishments` are the active punishments of the user:
+  - `id` of the punishment.
+  - `kind` is `mute` or `ban`.
+  - `ip` is the address range it also covers, `null` if none.
+  - `reason` is the reason staff gave.
+  - `issued_by` is the id of the staff member, `null` if unknown.
+  - `created` and `expires` are milliseconds since the Unix epoch; `expires` is `null` if it is permanent.
+
+**Example**
+```json
+{
+    "m": "Punishments",
+    "c": {
+        "user": {
+            "id": "0190c3a2-5f1e-7c4b-9d2a-1b3c4d5e6f70",
+            "kind": "account",
+            "name": "Notch"
+        },
+        "punishments": [
+            {
+                "id": "019a5c1e-2b3d-7e4f-8a9b-0c1d2e3f4a5b",
+                "kind": "ban",
+                "ip": "203.0.113.7/32",
+                "reason": "Spam",
+                "issued_by": "0190c3a2-6a7b-7c8d-9e0f-a1b2c3d4e5f6",
+                "created": 1762520400000,
+                "expires": null
+            }
+        ]
+    }
+}
+```
+
 ### Success
 This packet is sent after either
 [LoginMojang](#loginmojang), [LoginJWT](#loginjwt), [LoginAccount](#loginaccount),
-[BanUser](#banuser) or [UnbanUser](#unbanuser)
+[BanUser](#banuser), [UnbanUser](#unbanuser), [Punish](#punish) or [Pardon](#pardon)
 were processed successfully.
 
 - `reason` is the reason for the success; it is one of the following possible
@@ -256,6 +315,8 @@ were processed successfully.
   - `Ban`
   - `Unban`
   - `Minecraft` after a [Minecraft proof](#minecraft-proof)
+  - `Punish`
+  - `Pardon`
 
 **Example**
 ```json
@@ -452,6 +513,23 @@ as [Message](#message) if it fits the validation scheme.
 }
 ```
 
+### Pardon
+Staff can send this packet to lift punishments.
+The answer is [Success](#success) with `Pardon`, or `NotBanned` if there was nothing to lift.
+
+- `user` is the id or name of a user; every punishment of the user is lifted.
+- `ip` is used without `user`: the punishments on exactly this address range are lifted.
+
+**Example**
+```json
+{
+    "m": "Pardon",
+    "c": {
+        "user": "Notch"
+    }
+}
+```
+
 ### PrivateMessage
 The `content` of this packet will be sent to the specified client
 as [PrivateMessage](#privatemessage) if it fits the validation scheme.
@@ -466,6 +544,33 @@ as [PrivateMessage](#privatemessage) if it fits the validation scheme.
     "c": {
         "content": "Hello, Notch!",
         "receiver": "Notch"
+    }
+}
+```
+
+### Punish
+Staff can send this packet to mute or ban a user or an address range.
+Staff members cannot be punished. The answer is [Success](#success) with `Punish`,
+`UnknownUser` if nobody matches `user`, or `NotPermitted`.
+Users the punishment covers get [Punished](#punished).
+
+- `user` is the id or name of a user, who may be offline.
+  Names prefer LiquidBounce Accounts.
+- `ip` is used without `user`: an address or range such as `203.0.113.7` or `2001:db8::/64`.
+- `kind` is `mute` or `ban`. A ban also mutes and keeps the user from logging in.
+- `duration` is the length in seconds; without it the punishment is permanent.
+- `reason` is shown to the user, at most 256 characters.
+- `include_ip` also punishes the last address of `user` (its /64 for IPv6). Defaults to `false`.
+
+**Example**
+```json
+{
+    "m": "Punish",
+    "c": {
+        "user": "Notch",
+        "kind": "mute",
+        "duration": 60,
+        "reason": "Spam"
     }
 }
 ```
@@ -496,6 +601,22 @@ This packet has no body.
 ```json
 {
     "m": "RequestMojangInfo"
+}
+```
+
+### RequestPunishments
+Staff can send this packet to see the active punishments of a user.
+The answer is [Punishments](#punishments), or `UnknownUser`.
+
+- `user` is the id or name of a user.
+
+**Example**
+```json
+{
+    "m": "RequestPunishments",
+    "c": {
+        "user": "Notch"
+    }
 }
 ```
 

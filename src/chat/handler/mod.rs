@@ -6,6 +6,7 @@ mod jwt;
 mod login;
 mod message;
 mod mojang;
+mod punish;
 
 use super::{ChatServer, ClientPacket, ServerPacket, ServerPacketId};
 
@@ -53,6 +54,27 @@ impl Handler<ServerPacketId> for ChatServer {
             }
             ServerPacket::UnbanUser { user } => {
                 self.unban_user(user_id, user, ctx);
+            }
+            ServerPacket::Punish {
+                user,
+                ip,
+                kind,
+                duration,
+                reason,
+                include_ip,
+            } => {
+                let target = match (user, ip) {
+                    (Some(query), _) => punish::Target::User { query, include_ip },
+                    (None, Some(ip)) => punish::Target::Ip(ip),
+                    (None, None) => punish::Target::Nobody,
+                };
+                self.handle_punish(user_id, target, kind, duration, reason, ctx);
+            }
+            ServerPacket::Pardon { user, ip } => {
+                self.handle_pardon(user_id, user, ip, ctx);
+            }
+            ServerPacket::RequestPunishments { user } => {
+                self.handle_request_punishments(user_id, user, ctx);
             }
             ServerPacket::RequestUserCount => {
                 self.send_user_count(user_id);
