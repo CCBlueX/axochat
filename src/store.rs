@@ -4,7 +4,7 @@ use log::*;
 use actix::prelude::*;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait,
 };
 use std::net::IpAddr;
@@ -139,6 +139,30 @@ impl Handler<MinecraftUser> for Store {
                     Ok(Some(user))
                 }
                 (existing, _) => Ok(existing),
+            }
+        })
+    }
+}
+
+/// A user by id or name, for staff: accounts first, then Minecraft users; the oldest of a name wins.
+#[derive(Message)]
+#[rtype(result = "Result<Option<user::Model>, DbErr>")]
+pub struct FindUser(pub String);
+
+impl Handler<FindUser> for Store {
+    type Result = AtomicResponse<Self, Result<Option<user::Model>, DbErr>>;
+
+    fn handle(&mut self, FindUser(query): FindUser, _ctx: &mut Context<Self>) -> Self::Result {
+        atomic!(self, db => {
+            if let Ok(id) = Uuid::parse_str(&query) {
+                if let Some(user) = user::Entity::find_by_id(id).one(&db).await? {
+                    return Ok(Some(user));
+                }
+            }
+            let named = || user::Entity::find().filter(user::Column::Name.eq(query.as_str())).order_by_asc(user::Column::CreatedAt);
+            match named().filter(user::Column::Account.is_not_null()).one(&db).await? {
+                Some(account) => Ok(Some(account)),
+                None => named().one(&db).await,
             }
         })
     }

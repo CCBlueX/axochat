@@ -62,4 +62,16 @@ class AxochatCodecTest {
         assertNull(AxochatCodec.decodeOrNull(packet(""""global"""")))
         assertNull(AxochatCodec.decodeOrNull(packet("""{"type":"direct"}""")))
     }
+
+    @Test
+    fun `moderation packets`() {
+        assertEquals(
+            """{"m":"Punish","c":{"user":"Notch","kind":"ban","reason":"spam","include_ip":true}}""",
+            AxochatCodec.encode(Serverbound.Punish(user = "Notch", kind = PunishmentKind.Ban, reason = "spam", includeIp = true)),
+        )
+        val punished = assertIs<Clientbound.Punished>(
+            AxochatCodec.decode("""{"m":"Punished","c":{"kind":"mute","reason":"spam","expires":60000}}"""),
+        )
+        assertEquals(Clientbound.Punished(PunishmentKind.Mute, "spam", 60000), punished)
+    }
 }

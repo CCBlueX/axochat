@@ -76,11 +76,15 @@ impl Moderation {
         self.punishments.push(punishment);
     }
 
-    /// Lifts every punishment of the user and returns their ids.
-    pub fn revoke(&mut self, user: Uuid) -> Vec<Uuid> {
+    pub fn of_user(&self, user: Uuid, now: i64) -> Vec<&Punishment> {
+        self.punishments.iter().filter(|p| p.is_active(now) && p.user == Some(user)).collect()
+    }
+
+    /// Lifts every punishment of the user, or on exactly the range, and returns their ids.
+    pub fn revoke(&mut self, user: Option<Uuid>, ip: Option<Cidr>) -> Vec<Uuid> {
         let mut revoked = Vec::new();
         self.punishments.retain(|p| {
-            let matches = p.user == Some(user);
+            let matches = (user.is_some() && p.user == user) || (ip.is_some() && p.ip == ip);
             if matches {
                 revoked.push(p.id);
             }
@@ -131,7 +135,7 @@ mod tests {
 
         moderation.add(punishment(Kind::Ban, Some(bob), Some("203.0.113.7/32"), Some(200)));
         assert!(moderation.find(Kind::Ban, None, Some(home), 50).is_some());
-        assert_eq!(moderation.revoke(bob).len(), 1);
+        assert_eq!(moderation.revoke(Some(bob), None).len(), 1);
         assert!(moderation.find(Kind::Ban, None, Some(home), 50).is_none(), "pardon lifts the ip too");
 
         moderation.prune(150);

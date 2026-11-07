@@ -144,7 +144,8 @@ impl ChatServer {
                 .is_some();
         if muted {
             info!("User `{}` tried to send message while muted", user_id);
-            self.send_error(user_id, ClientError::Banned);
+            let error = if session.hello { ClientError::Muted } else { ClientError::Banned };
+            self.send_error(user_id, error);
             return None;
         }
 
