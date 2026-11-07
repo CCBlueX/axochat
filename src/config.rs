@@ -1,9 +1,13 @@
+use crate::ip::TrustedProxy;
 use clap::Args;
 use jsonwebtoken::Algorithm;
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 #[derive(Args, Clone)]
 pub struct Config {
+    #[command(flatten)]
+    pub mojang: MojangConfig,
+
     #[command(flatten)]
     pub net: NetConfig,
 
@@ -33,6 +37,14 @@ pub struct NetConfig {
     /// If the extension is `pem`, `PEM` format will be used, otherwise `ASN1`.
     #[arg(long = "tls-key-file", env = "TLS_KEY_FILE")]
     pub key_file: Option<PathBuf>,
+
+    /// Proxies whose client address header is believed: CIDRs, or `cloudflare` for its ranges.
+    #[arg(long = "trusted-proxies", env = "TRUSTED_PROXIES", value_delimiter = ',')]
+    pub trusted_proxies: Vec<TrustedProxy>,
+
+    /// The header a trusted proxy puts the client address in.
+    #[arg(long = "real-ip-header", env = "REAL_IP_HEADER", default_value = "CF-Connecting-IP")]
+    pub real_ip_header: String,
 }
 
 #[derive(Args, Clone)]
@@ -81,7 +93,30 @@ pub struct ModConfig {
     #[arg(long = "moderators-file", env = "MODERATORS_FILE", default_value = "./moderators.txt")]
     pub moderators: PathBuf,
 
-    /// The file containing the banned users (line separated).
-    #[arg(long = "banned-file", env = "BANNED_FILE", default_value = "./banned.txt")]
-    pub banned: PathBuf,
+    /// How long the last address of a user is kept after they were last seen.
+    #[arg(
+        long = "ip-retention",
+        env = "IP_RETENTION",
+        default_value = "30d",
+        value_parser = humantime::parse_duration
+    )]
+    pub ip_retention: Duration,
+}
+
+#[derive(Args, Clone)]
+pub struct DbConfig {
+    /// The MySQL or MariaDB connection URL.
+    #[arg(id = "database_url", long = "database-url", env = "DATABASE_URL", hide_env_values = true)]
+    pub url: String,
+}
+
+#[derive(Args, Clone)]
+pub struct MojangConfig {
+    #[arg(
+        long = "mojang-session-url",
+        env = "MOJANG_SESSION_URL",
+        default_value = "https://sessionserver.mojang.com",
+        hide = true
+    )]
+    pub session_url: String,
 }

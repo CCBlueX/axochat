@@ -186,7 +186,8 @@ This packet is sent after [RequestUserCount](#requestusercount) was received.
 Server Packets are received by the server.
 
 ### BanUser
-A client can send this packet to ban other users from using this chat.
+A moderator can send this packet to ban other users from this chat.
+Banned users are logged out and cannot log in again; they get an `Error` with `Banned`.
 
 - `user` is the uuid of the user to ban.
 
@@ -317,7 +318,7 @@ This packet has no body.
 ```
 
 ### UnbanUser
-A client can send this packet to unban other users.
+A moderator can send this packet to lift every ban and mute of a user.
 
 - `user` is the uuid of the user to unban.
 

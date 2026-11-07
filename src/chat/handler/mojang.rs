@@ -1,9 +1,7 @@
 use crate::error::*;
 use log::*;
 
-use crate::chat::{ChatServer, ClientPacket, InternalId, SuccessReason, User, UserSession, send_message};
-use crate::message::RateLimiter;
-use std::collections::HashSet;
+use crate::chat::{ChatServer, ClientPacket, InternalId, User, send_message};
 
 use crate::auth::authenticate;
 use actix::*;
@@ -62,13 +60,14 @@ impl ChatServer {
             let uuid = info.uuid;
             let userid_for_closure = user_id;
             let session_addr = session.addr.clone();
+            let session_url = self.config.mojang.session_url.clone();
 
             ctx.spawn(
                 async move {
-                    authenticate(&name, &session_hash).await
+                    authenticate(&session_url, &name, &session_hash).await
                 }
                 .into_actor(self)
-                .then(move |res, actor, _ctx| {
+                .then(move |res, actor, ctx| {
                     match res {
                         Ok(mojang_info)
                             if Uuid::from_str(&mojang_info.id)
@@ -80,29 +79,7 @@ impl ChatServer {
                                 userid_for_closure, mojang_info.id, mojang_info.name
                             );
 
-                            if let Some(session) = actor.connections.get_mut(&userid_for_closure) {
-                                actor
-                                    .users
-                                    .entry(info.name.clone())
-                                    .or_insert(UserSession {
-                                        rate_limiter: RateLimiter::new(
-                                            actor.config.message.clone(),
-                                        ),
-                                        connections: HashSet::new(),
-                                    })
-                                    .connections
-                                    .insert(userid_for_closure);
-
-                                session.user = Some(info);
-
-                                send_message(
-                                    &session.addr,
-                                    ClientPacket::Success {
-                                        reason: SuccessReason::Login,
-                                    },
-                                    "mojang login success"
-                                );
-                            }
+                            actor.identify(userid_for_closure, info, ctx);
                         }
                         Ok(_) => {
                             send_message(

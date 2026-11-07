@@ -1,6 +1,7 @@
 use super::{ChatServer, ClientPacket};
 use crate::auth::UserInfo;
-use crate::chat::{InternalId, SessionState, send_message};
+use crate::chat::{now_ms, InternalId, SessionState, send_message};
+use crate::entity::punishment::Kind;
 
 use crate::error::*;
 use log::*;
@@ -125,8 +126,13 @@ impl ChatServer {
 
                 return None;
             }
-            if self.moderation.is_banned(&info.uuid) {
-                info!("User `{}` tried to send message while banned", user_id);
+            let muted = !self.moderation.is_moderator(&info.uuid)
+                && self
+                    .moderation
+                    .find(Kind::Mute, session.stored_id, Some(session.ip), now_ms())
+                    .is_some();
+            if muted {
+                info!("User `{}` tried to send message while muted", user_id);
                 send_message(
                     &session.addr,
                     ClientPacket::Error {

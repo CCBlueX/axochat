@@ -1,17 +1,24 @@
 mod auth;
 mod chat;
 mod config;
+mod entity;
 mod error;
+mod ip;
 mod message;
 mod moderation;
+mod store;
 
 use clap::{Parser, Subcommand};
-use config::Config;
+use config::{Config, DbConfig};
 use error::*;
 use log::*;
 
 use actix::*;
 use actix_web::{web, App, HttpServer};
+use rand::{rngs::SysRng, SeedableRng};
+use rand_hc::Hc128Rng;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 #[cfg(feature = "rustls-tls")]
@@ -35,13 +42,22 @@ struct Opt {
 #[derive(Subcommand)]
 enum Command {
     /// Starts the axochat server.
-    Start,
+    Start {
+        #[command(flatten)]
+        database: DbConfig,
+    },
     /// Generates a JWT which can be used for logging in.
     /// This should only be used for testing.
     /// If you want to generate JWT for non-testing purposes, send a RequestJWT packet to the server.
     Generate {
         name: String,
         uuid: Option<Uuid>,
+    },
+    /// Mutes the Minecraft UUIDs of a line-separated file, like the old `banned.txt`.
+    ImportBans {
+        #[command(flatten)]
+        database: DbConfig,
+        file: PathBuf,
     },
 }
 
@@ -51,7 +67,7 @@ async fn main() -> Result<()> {
 
     let Opt { config, command } = Opt::parse();
     match command {
-        Command::Start => start_server(config).await,
+        Command::Start { database } => start_server(config, &database).await,
         Command::Generate { name, uuid } => {
             let auth = match auth::Authenticator::new(&config.auth) {
                 Some(auth) => auth,
@@ -67,25 +83,86 @@ async fn main() -> Result<()> {
             println!("{}", token);
             Ok(())
         }
+        Command::ImportBans { database, file } => import_bans(&database, &file).await,
     }
 }
 
-async fn start_server(config: Config) -> Result<()> {
+async fn open_store(database: &DbConfig) -> Result<Addr<store::Store>> {
+    let db = sea_orm::Database::connect(&database.url).await?;
+    db.get_schema_registry("axochat::entity::*").sync(&db).await?;
+    Ok(store::Store::new(db).start())
+}
+
+async fn active_punishments(store: &Addr<store::Store>) -> Result<Vec<moderation::Punishment>> {
+    let models = store.send(store::LoadPunishments { now: chat::now_ms() }).await??;
+    Ok(models.into_iter().map(moderation::Punishment::from_model).collect())
+}
+
+async fn import_bans(database: &DbConfig, file: &Path) -> Result<()> {
+    let store = open_store(database).await?;
+    let mut muted: HashSet<_> = active_punishments(&store)
+        .await?
+        .into_iter()
+        .filter(|punishment| punishment.kind == entity::punishment::Kind::Mute)
+        .filter_map(|punishment| punishment.user)
+        .collect();
+    let mut rng = Hc128Rng::try_from_rng(&mut SysRng).expect("could not initialize hc128 rng");
+
+    let mut imported = 0;
+    for line in std::fs::read_to_string(file)?.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let uuid: Uuid = line.parse()?;
+        let now = chat::now_ms();
+        let create = Some((chat::new_id(&mut rng), now));
+        let Some(target) = store.send(store::MinecraftUser { uuid, create }).await?? else {
+            continue;
+        };
+        if !muted.insert(target.id) {
+            continue;
+        }
+        let punishment = moderation::Punishment {
+            id: chat::new_id(&mut rng),
+            kind: entity::punishment::Kind::Mute,
+            user: Some(target.id),
+            ip: None,
+            reason: String::new(),
+            issued_by: None,
+            created_at: now,
+            expires_at: None,
+        };
+        store
+            .send(store::Persist(vec![store::Write::Punish(punishment.to_model())]))
+            .await?;
+        imported += 1;
+    }
+    println!("Muted {} users.", imported);
+    Ok(())
+}
+
+async fn start_server(config: Config, database: &DbConfig) -> Result<()> {
     // every connection is a file; Docker and systemd default to a soft limit of 1024
     match rlimit::increase_nofile_limit(u64::MAX) {
         Ok(limit) => info!("Open file limit is {}", limit),
         Err(err) => warn!("Could not raise the open file limit: {}", err),
     }
 
+    let store = open_store(database).await?;
+    let moderators = moderation::read_ids(&config.moderation.moderators)?;
+    let moderation = moderation::Moderation::new(moderators, active_punishments(&store).await?);
+
     let server_config = config.clone();
-    let server = chat::ChatServer::new(server_config).start();
+    let server = chat::ChatServer::new(server_config, store, moderation).start();
 
     let server_data = web::Data::new(server);
+    let real_ip = web::Data::new(ip::RealIp::new(
+        &config.net.trusted_proxies,
+        config.net.real_ip_header.clone(),
+    ));
     let net = config.net.clone();
 
     let mut server = HttpServer::new(move || {
         App::new()
             .app_data(server_data.clone())
+            .app_data(real_ip.clone())
             .service(web::resource("/ws").to(chat::chat_route))
     });
 

@@ -11,7 +11,9 @@ The server is configured through environment variables, see [.env.example](.env.
 cargo run --release -- start
 ```
 
-The Docker image runs in `/data`, where the moderator and ban files and certificates are kept; mount a volume there.
+It needs a MySQL or MariaDB database; tables are created on startup.
+The Docker image runs in `/data`, where the moderator file and certificates are kept; mount a volume there.
 `docker compose up -d` runs it from `.env`; `COMPOSE_PROFILES=tunnel` and `TUNNEL_TOKEN` add a Cloudflare tunnel.
 
 `axochat generate <name> [uuid]` prints a JWT for testing.
+Mutes from an old `banned.txt` move into the database with `axochat import-bans banned.txt`.
