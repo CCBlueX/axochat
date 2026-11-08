@@ -35,3 +35,4 @@ url = "2.5"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 rlimit = "0.11"
 sea-orm = { version = "2.0", default-features = false, features = ["sqlx-mysql", "runtime-tokio", "macros", "with-uuid", "entity-registry", "schema-sync"] }
+rustrict = { version = "0.7.39", default-features = false, features = ["censor"] }

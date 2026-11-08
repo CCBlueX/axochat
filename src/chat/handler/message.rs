@@ -23,12 +23,14 @@ struct Sender {
     id: Uuid,
     legacy: UserInfo,
     author: Author,
+    /// Staff messages are not screened.
+    screened: bool,
 }
 
 impl ChatServer {
-    pub(super) fn handle_message(&mut self, user_id: InternalId, content: String) {
+    pub(super) fn handle_message(&mut self, user_id: InternalId, content: String, ctx: &mut Context<Self>) {
         let Some(sender) = self.check_message(user_id, &content) else { return };
-        self.send_global(user_id, sender, content);
+        self.send_global(user_id, sender, content, ctx);
     }
 
     /// Old clients reach Minecraft accounts too, by name only.
@@ -41,9 +43,15 @@ impl ChatServer {
         self.send_direct(user_id, sender, target, content);
     }
 
-    pub(super) fn handle_chat_message(&mut self, user_id: InternalId, channel: Target, content: String) {
+    pub(super) fn handle_chat_message(
+        &mut self,
+        user_id: InternalId,
+        channel: Target,
+        content: String,
+        ctx: &mut Context<Self>,
+    ) {
         match channel {
-            Target::Global => self.handle_message(user_id, content),
+            Target::Global => self.handle_message(user_id, content, ctx),
             Target::Direct(receiver) => {
                 if self.online_user(user_id).is_some_and(|user| user.kind != UserKind::Account) {
                     self.send_error(user_id, ClientError::AccountRequired);
@@ -69,21 +77,79 @@ impl ChatServer {
         })
     }
 
-    fn send_global(&mut self, user_id: InternalId, sender: Sender, content: String) {
+    fn send_global(&mut self, user_id: InternalId, sender: Sender, content: String, ctx: &mut Context<Self>) {
         info!("User `{}` has written `{}`.", user_id, content);
+        let (content, original) = match self.filters.censor(&content).filter(|_| sender.screened) {
+            Some(censored) => (censored, Some(content)),
+            None => (content, None),
+        };
         let legacy = ClientPacket::Message {
             author_info: sender.legacy,
             content: content.clone(),
         };
-        let message = self.history.record(sender.id, Audience::Global, content);
-        for session in self.connections.values() {
+        let id = self.history.record(sender.id, Audience::Global, content, original).id;
+        let message = self.history.get(id).expect("just recorded");
+        for (id, session) in &self.connections {
             let packet = if session.hello {
-                message.packet(session.stored_id, &sender.author)
+                message.packet(session.stored_id, &sender.author, self.is_staff(*id))
             } else {
                 legacy.clone()
             };
             send_message(&session.addr, packet, "broadcast message");
         }
+        if sender.screened && !self.filters.screens.is_empty() {
+            let (id, content) = (message.id, message.content.clone());
+            self.screen(id, content, ctx);
+        }
+    }
+
+    /// Every screen looks at what was delivered on its own; the first to object takes the message back.
+    fn screen(&mut self, id: u64, content: String, ctx: &mut Context<Self>) {
+        let content = Arc::new(content);
+        for screen in self.filters.screens.clone() {
+            let content = content.clone();
+            let check = async move { (screen.name(), screen.violation(&content).await) };
+            ctx.spawn(check.into_actor(self).map(move |(name, result), actor, _ctx| match result {
+                Ok(Some(reason)) => {
+                    if actor.remove_message(id) {
+                        info!("The {} filter removed message {} for `{}`.", name, id, reason);
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => warn!("The {} filter could not check message {}: {}", name, id, err),
+            }));
+        }
+    }
+
+    pub(super) fn handle_remove_message(&mut self, user_id: InternalId, id: u64) {
+        if !self.is_staff(user_id) {
+            self.send_error(user_id, ClientError::NotPermitted);
+            return;
+        }
+        if self.history.get(id).is_none() {
+            self.send_error(user_id, ClientError::InvalidId);
+        } else if self.remove_message(id) {
+            info!("`{}` removed message {}.", user_id, id);
+        }
+    }
+
+    /// Tells everyone who could have seen the message; clients without a handshake cannot be told.
+    /// False if it was already removed or is too old.
+    fn remove_message(&mut self, id: u64) -> bool {
+        let Some(recorded) = self.history.get_mut(id).filter(|recorded| !recorded.removed) else { return false };
+        recorded.removed = true;
+        let (author, audience) = (recorded.author, recorded.audience);
+        let viewers = self.connections.values().filter(|session| {
+            session.hello
+                && match audience {
+                    Audience::Global => true,
+                    Audience::Direct { receiver } => session.stored_id.is_some_and(|user| user == author || user == receiver),
+                }
+        });
+        for session in viewers {
+            send_message(&session.addr, ClientPacket::MessageRemoved { id }, "removal");
+        }
+        true
     }
 
     /// Reaches every connection of the receiver that allows messages; the sender's other connections see it too.
@@ -108,7 +174,7 @@ impl ChatServer {
             author_info: sender.legacy,
             content: content.clone(),
         };
-        let message = self.history.record(sender.id, Audience::Direct { receiver: target }, content);
+        let message = self.history.record(sender.id, Audience::Direct { receiver: target }, content, None);
         let echoes = self
             .users
             .get(&sender.id)
@@ -119,7 +185,7 @@ impl ChatServer {
         let receivers = receivers.iter().filter_map(|id| self.connections.get(id));
         for session in receivers.chain(echoes) {
             let packet = if session.hello {
-                message.packet(session.stored_id, &sender.author)
+                message.packet(session.stored_id, &sender.author, false)
             } else {
                 legacy.clone()
             };
@@ -146,7 +212,8 @@ impl ChatServer {
             }
             return None;
         }
-        let muted = !self.is_staff(user_id)
+        let staff = self.is_staff(user_id);
+        let muted = !staff
             && self
                 .moderation
                 .find(Kind::Mute, Some(id), Some(session.ip), now_ms())
@@ -165,6 +232,7 @@ impl ChatServer {
                 uuid: info.uuid,
             },
             author: self.author(user_id)?,
+            screened: !staff,
         })
     }
 
@@ -196,12 +264,12 @@ impl ChatServer {
             .find(|(_, relayed)| relayed.account == account && relayed.fetched_at.elapsed() < ROLE_REFRESH)
             .map(|(id, _)| *id);
         if let Some(id) = fresh {
-            self.send_for(user_id, id, &account, content);
+            self.send_for(user_id, id, &account, content, ctx);
             return;
         }
 
         let lookup = account_user(self.api.clone(), self.store.clone(), account.clone(), new_id(&mut self.rng), now_ms());
-        ctx.spawn(lookup.into_actor(self).map(move |result, actor, _ctx| match result {
+        ctx.spawn(lookup.into_actor(self).map(move |result, actor, ctx| match result {
             Ok((model, roles)) => {
                 let legacy = UserInfo {
                     name: model.name.clone(),
@@ -218,15 +286,15 @@ impl ChatServer {
                 relayed.legacy = legacy;
                 relayed.roles = roles;
                 relayed.fetched_at = Instant::now();
-                actor.send_for(user_id, model.id, &account, content);
+                actor.send_for(user_id, model.id, &account, content, ctx);
             }
             Err(error) => actor.send_error_for(user_id, error, &account),
         }));
     }
 
-    fn send_for(&mut self, user_id: InternalId, id: Uuid, account: &str, content: String) {
+    fn send_for(&mut self, user_id: InternalId, id: Uuid, account: &str, content: String, ctx: &mut Context<Self>) {
         match self.check_message_for(id, &content) {
-            Ok(sender) => self.send_global(user_id, sender, content),
+            Ok(sender) => self.send_global(user_id, sender, content, ctx),
             Err(error) => {
                 info!("Message of `{}` for `{}` was refused: {}", user_id, account, error);
                 self.send_error_for(user_id, error, account);
@@ -272,6 +340,7 @@ impl ChatServer {
                 highlight: perks,
             },
             legacy,
+            screened: !staff,
         })
     }
 

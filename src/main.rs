@@ -7,6 +7,7 @@ mod error;
 mod ip;
 mod message;
 mod moderation;
+mod filter;
 mod store;
 
 use clap::{Parser, Subcommand};
@@ -146,11 +147,13 @@ async fn start_server(config: Config, database: &DbConfig) -> Result<()> {
         Err(err) => warn!("Could not raise the open file limit: {}", err),
     }
 
+    let filters = filter::Filters::new(&config.filter).map_err(|message| Error::Config { message })?;
+    info!("Message filters: {:?}", filters.names());
     let store = open_store(database).await?;
     let moderation = moderation::Moderation::new(active_punishments(&store).await?);
 
     let server_config = config.clone();
-    let server = chat::ChatServer::new(server_config, store, moderation).start();
+    let server = chat::ChatServer::new(server_config, store, moderation, filters).start();
 
     let server_data = web::Data::new(server);
     let real_ip = web::Data::new(ip::RealIp::new(

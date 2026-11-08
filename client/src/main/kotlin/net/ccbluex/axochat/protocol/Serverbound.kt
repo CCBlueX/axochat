@@ -133,6 +133,13 @@ public sealed interface Serverbound {
     public data class ResolveReport(val id: String) : Serverbound
 
     /**
+     * Staff only. Everyone who could have seen the message gets [Clientbound.MessageRemoved].
+     */
+    @Serializable
+    @SerialName("RemoveMessage")
+    public data class RemoveMessage(val id: Long) : Serverbound
+
+    /**
      * Staff only.
      */
     @Serializable

@@ -76,6 +76,7 @@ public sealed interface Clientbound {
      * @param channel for a direct message the other side: the sender, or the receiver in the echo to the sender
      * @param id counts up during a server run
      * @param time milliseconds since the Unix epoch
+     * @param original staff only: what the author wrote, if the server censored [content]
      */
     @Serializable
     @SerialName("ChatMessage")
@@ -85,7 +86,15 @@ public sealed interface Clientbound {
         val time: Long,
         val author: Author,
         val content: String,
+        val original: String? = null,
     ) : Clientbound
+
+    /**
+     * A [ChatMessage] a server filter or staff took back after it was delivered; clients hide it or mark it as removed.
+     */
+    @Serializable
+    @SerialName("MessageRemoved")
+    public data class MessageRemoved(val id: Long) : Clientbound
 
     /**
      * The receiver was just punished; a ban also ends the login.

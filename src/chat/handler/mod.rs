@@ -43,12 +43,12 @@ impl Handler<ServerPacketId> for ChatServer {
             ServerPacket::Hello { protocol } => {
                 self.handle_hello(user_id, protocol);
             }
-            ServerPacket::Message { content } => self.handle_message(user_id, content),
+            ServerPacket::Message { content } => self.handle_message(user_id, content, ctx),
             ServerPacket::PrivateMessage { receiver, content } => {
                 self.handle_private_message(user_id, receiver, content);
             }
             ServerPacket::ChatMessage { channel, content, account: None } => {
-                self.handle_chat_message(user_id, channel, content);
+                self.handle_chat_message(user_id, channel, content, ctx);
             }
             ServerPacket::ChatMessage { channel, content, account: Some(account) } => {
                 self.handle_message_for(user_id, channel, content, account, ctx);
@@ -85,6 +85,7 @@ impl Handler<ServerPacketId> for ChatServer {
             }
             ServerPacket::RequestReports => self.handle_request_reports(user_id, ctx),
             ServerPacket::ResolveReport { id } => self.handle_resolve_report(user_id, id),
+            ServerPacket::RemoveMessage { id } => self.handle_remove_message(user_id, id),
             ServerPacket::RequestUserCount => {
                 self.send_user_count(user_id);
             }
