@@ -15,6 +15,7 @@ All packets are sent to the `/ws` endpoint.
         - [Error](#error)
         - [Hello](#hello)
         - [Message](#message)
+        - [MessageRemoved](#messageremoved)
         - [MojangInfo](#mojanginfo)
         - [NewJWT](#newjwt)
         - [PrivateMessage](#privatemessage)
@@ -36,6 +37,7 @@ All packets are sent to the `/ws` endpoint.
         - [Pardon](#pardon)
         - [PrivateMessage](#privatemessage-1)
         - [Punish](#punish)
+        - [RemoveMessage](#removemessage)
         - [Report](#report)
         - [RequestJWT](#requestjwt)
         - [RequestMojangInfo](#requestmojanginfo)
@@ -110,7 +112,8 @@ to clients after a [handshake](#handshake).
 - `id` identifies the message; ids grow with every message, also across server restarts.
 - `time` is when the server got the message, in milliseconds since the Unix epoch.
 - `author` is the sender, as `user` in [Welcome](#welcome).
-- `content` is the message, see [Message](#message).
+- `content` is the message, see [Message](#message). The server may censor words of global messages.
+- `original` is only sent to staff, and only when `content` was censored: what the author wrote.
 
 **Example**
 ```json
@@ -193,6 +196,25 @@ Clients after a [handshake](#handshake) get [ChatMessage](#chatmessage) instead.
             "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5"
         },
         "content": "Hello, World!"
+    }
+}
+```
+
+### MessageRemoved
+A [ChatMessage](#chatmessage) was taken back after it was delivered: a server filter flagged it,
+or staff sent [RemoveMessage](#removemessage).
+Sent after a [handshake](#handshake) to everyone who could have seen the message, whether or not they got it;
+clients hide the message or replace its text with a note that it was removed.
+Filters only look at global messages of users who are not staff.
+
+- `id` is the `id` of the [ChatMessage](#chatmessage).
+
+**Example**
+```json
+{
+    "m": "MessageRemoved",
+    "c": {
+        "id": 4182
     }
 }
 ```
@@ -656,6 +678,23 @@ Users the punishment covers get [Punished](#punished).
         "kind": "mute",
         "duration": 60,
         "reason": "Spam"
+    }
+}
+```
+
+### RemoveMessage
+Staff can send this packet to take back a message of the last 1000;
+everyone who could have seen it gets [MessageRemoved](#messageremoved), the sender too.
+An unknown `id` is answered with `InvalidId`.
+
+- `id` is the `id` of the [ChatMessage](#chatmessage).
+
+**Example**
+```json
+{
+    "m": "RemoveMessage",
+    "c": {
+        "id": 4182
     }
 }
 ```

@@ -1,7 +1,8 @@
 use crate::ip::TrustedProxy;
 use clap::Args;
 use jsonwebtoken::Algorithm;
-use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use rustrict::Type;
+use std::{net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 
 #[derive(Args, Clone)]
 pub struct Config {
@@ -19,6 +20,9 @@ pub struct Config {
 
     #[command(flatten)]
     pub moderation: ModConfig,
+
+    #[command(flatten)]
+    pub filter: FilterConfig,
 
     #[command(flatten)]
     pub service: ServiceConfig,
@@ -125,6 +129,107 @@ pub struct DbConfig {
     /// The MySQL or MariaDB connection URL.
     #[arg(id = "database_url", long = "database-url", env = "DATABASE_URL", hide_env_values = true)]
     pub url: String,
+}
+
+#[derive(Args, Clone)]
+pub struct FilterConfig {
+    /// What checks global messages of users who are not staff: `none`, or any of `rustrict`
+    /// (censors before delivery), `moderation` and `llm` (remove after delivery).
+    #[arg(long = "message-filters", env = "MESSAGE_FILTERS", value_delimiter = ',', default_value = "none")]
+    pub filters: Vec<Filter>,
+
+    /// `type:severity` pairs rustrict censors, types `profane`, `offensive`, `sexual`, `mean`,
+    /// severities `mild`, `moderate`, `severe` (that or worse).
+    #[arg(long = "rustrict-censor", env = "RUSTRICT_CENSOR", value_delimiter = ',', default_value = "offensive:severe")]
+    pub censor: Vec<CensorLevel>,
+
+    /// The key for the OpenAI moderation endpoint.
+    #[arg(id = "openai_api_key", long = "openai-api-key", env = "OPENAI_API_KEY", hide_env_values = true)]
+    pub moderation_key: Option<String>,
+
+    #[arg(long = "openai-url", env = "OPENAI_URL", default_value = "https://api.openai.com/v1", hide = true)]
+    pub moderation_url: String,
+
+    #[arg(long = "moderation-model", env = "MODERATION_MODEL", default_value = "omni-moderation-latest")]
+    pub moderation_model: String,
+
+    /// `category=score` pairs; a message scoring at least that in a listed category is removed.
+    #[arg(
+        long = "moderation-thresholds",
+        env = "MODERATION_THRESHOLDS",
+        value_delimiter = ',',
+        default_value = "hate=0.88,hate/threatening=0.5"
+    )]
+    pub thresholds: Vec<Threshold>,
+
+    /// An OpenAI-compatible Chat Completions API.
+    #[arg(long = "llm-url", env = "LLM_URL", default_value = "https://api.openai.com/v1")]
+    pub llm_url: String,
+
+    #[arg(long = "llm-api-key", env = "LLM_API_KEY", hide_env_values = true)]
+    pub llm_key: Option<String>,
+
+    #[arg(long = "llm-model", env = "LLM_MODEL")]
+    pub llm_model: Option<String>,
+
+    /// A file with the system prompt, which asks for `REMOVE` or `KEEP`; a built-in one without.
+    #[arg(long = "llm-prompt", env = "LLM_PROMPT")]
+    pub llm_prompt: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+pub enum Filter {
+    None,
+    Rustrict,
+    Moderation,
+    Llm,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CensorLevel(pub Type);
+
+impl FromStr for CensorLevel {
+    type Err = String;
+
+    fn from_str(pair: &str) -> Result<CensorLevel, String> {
+        let (kind, severity) = pair.split_once(':').ok_or("expected `type:severity`")?;
+        let kind = match kind.trim() {
+            "profane" => Type::PROFANE,
+            "offensive" => Type::OFFENSIVE,
+            "sexual" => Type::SEXUAL,
+            "mean" => Type::MEAN,
+            other => return Err(format!("unknown type `{}`", other)),
+        };
+        let severity = match severity.trim() {
+            "mild" => Type::MILD_OR_HIGHER,
+            "moderate" => Type::MODERATE_OR_HIGHER,
+            "severe" => Type::SEVERE,
+            other => return Err(format!("unknown severity `{}`", other)),
+        };
+        Ok(CensorLevel(kind & severity))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Threshold {
+    pub category: String,
+    pub score: f64,
+}
+
+impl FromStr for Threshold {
+    type Err = String;
+
+    fn from_str(pair: &str) -> Result<Threshold, String> {
+        let (category, score) = pair.split_once('=').ok_or("expected `category=score`")?;
+        let score: f64 = score.trim().parse().map_err(|_| format!("invalid score `{}`", score))?;
+        if !(score > 0.0 && score <= 1.0) {
+            return Err(format!("score `{}` is not in (0, 1]", score));
+        }
+        Ok(Threshold {
+            category: category.trim().to_owned(),
+            score,
+        })
+    }
 }
 
 #[derive(Args, Clone)]

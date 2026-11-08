@@ -41,6 +41,7 @@ public object AxochatCodec {
         entry(Serverbound.Report.serializer()),
         entry(Serverbound.RequestReports.serializer()),
         entry(Serverbound.ResolveReport.serializer()),
+        entry(Serverbound.RemoveMessage.serializer()),
     ).toMap()
 
     private val clientbound: Map<String, KSerializer<out Clientbound>> = listOf(
@@ -54,6 +55,7 @@ public object AxochatCodec {
         Clientbound.Error.serializer(),
         Clientbound.Welcome.serializer(),
         Clientbound.ChatMessage.serializer(),
+        Clientbound.MessageRemoved.serializer(),
         Clientbound.Punished.serializer(),
         Clientbound.Punishments.serializer(),
         Clientbound.ReportCreated.serializer(),

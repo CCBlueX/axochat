@@ -68,7 +68,7 @@ impl ChatServer {
                         Audience::Global => GLOBAL,
                         Audience::Direct { .. } => DIRECT,
                     };
-                    Some((channel, id, recorded.content.clone()))
+                    Some((channel, id, recorded.original.as_ref().unwrap_or(&recorded.content).clone()))
                 }
                 None => None,
             };
