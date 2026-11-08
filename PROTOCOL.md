@@ -17,7 +17,6 @@ All packets are sent to the `/ws` endpoint.
         - [Message](#message)
         - [MojangInfo](#mojanginfo)
         - [NewJWT](#newjwt)
-        - [Presence](#presence)
         - [PrivateMessage](#privatemessage)
         - [Punished](#punished)
         - [Punishments](#punishments)
@@ -35,13 +34,11 @@ All packets are sent to the `/ws` endpoint.
         - [LoginMojang](#loginmojang)
         - [Message](#message-1)
         - [Pardon](#pardon)
-        - [Presence](#presence-1)
         - [PrivateMessage](#privatemessage-1)
         - [Punish](#punish)
         - [Report](#report)
         - [RequestJWT](#requestjwt)
         - [RequestMojangInfo](#requestmojanginfo)
-        - [RequestPresence](#requestpresence)
         - [RequestPunishments](#requestpunishments)
         - [RequestReports](#requestreports)
         - [RequestUserCount](#requestusercount)
@@ -229,31 +226,6 @@ This token can be used in the [LoginJWT](#loginjwt) packet.
     "m": "NewJWT",
     "c": {
         "token": "VGhpcyBjb3VsZCBiZSBhIGpzb24gd2ViIHRva2VuLCBidXQgaXQgaXNuJ3QK"
-    }
-}
-```
-
-### Presence
-The answer to [RequestPresence](#requestpresence).
-
-- `user` is the `id`, `kind` and `name` of the user.
-- `presence` is the latest [Presence](#presence-1) any connection of the user sent, `null` if none.
-
-**Example**
-```json
-{
-    "m": "Presence",
-    "c": {
-        "user": {
-            "id": "0190c3a2-5f1e-7c4b-9d2a-1b3c4d5e6f70",
-            "kind": "account",
-            "name": "Notch"
-        },
-        "presence": {
-            "state": "menu",
-            "timezone": "Europe/Berlin",
-            "time": 1794054171000
-        }
     }
 }
 ```
@@ -643,41 +615,6 @@ The answer is [Success](#success) with `Pardon`, or `NotBanned` if there was not
 }
 ```
 
-### Presence
-Where the client is, for features built on it.
-The server keeps only the latest one per connection and shares it with nobody but staff.
-It needs a login; more than one per second is ignored.
-
-- `state` is `menu`, `singleplayer` or `multiplayer`.
-- `server` is the server address as typed, in multiplayer only. Addresses under `liquidproxy.net` and
-  `liquidbounce.net` are left out.
-- `dimension` is the dimension id, not in the menu.
-- `position` is the block position, not in the menu: `x` and `z` within 30000000, `y` within 4096 either way.
-- `player` is the `uuid` and `name` of the Minecraft profile in game, not in the menu.
-- `timezone` is an IANA time zone id, at most 64 characters.
-- `time` is the client's clock when sending, in milliseconds since the Unix epoch.
-
-Other texts are at most 128 characters; anything outside the limits is an `InvalidPacket`.
-
-**Example**
-```json
-{
-    "m": "Presence",
-    "c": {
-        "state": "multiplayer",
-        "server": "mc.hypixel.net",
-        "dimension": "minecraft:overworld",
-        "position": { "x": 12, "y": 64, "z": -300 },
-        "player": {
-            "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
-            "name": "Notch"
-        },
-        "timezone": "Europe/Berlin",
-        "time": 1794054171000
-    }
-}
-```
-
 ### PrivateMessage
 The `content` of this packet will be sent to the specified client
 as [PrivateMessage](#privatemessage) if it fits the validation scheme.
@@ -772,22 +709,6 @@ This packet has no body.
 ```json
 {
     "m": "RequestMojangInfo"
-}
-```
-
-### RequestPresence
-Staff can send this packet to see the latest [Presence](#presence-1) of a user.
-The answer is [Presence](#presence), or `UnknownUser`.
-
-- `user` is the id or name of a user.
-
-**Example**
-```json
-{
-    "m": "RequestPresence",
-    "c": {
-        "user": "Notch"
-    }
 }
 ```
 

@@ -33,7 +33,6 @@ impl Handler<Connect> for ChatServer {
                 user: None,
                 minecraft: None,
                 stored_id: None,
-                presence: None,
             },
         );
         debug!("User `{}` joined the chat from {}.", id, msg.ip);

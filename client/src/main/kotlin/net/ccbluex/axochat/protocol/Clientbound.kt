@@ -114,12 +114,5 @@ public sealed interface Clientbound {
     @SerialName("Reports")
     public data class Reports(val reports: List<ReportView>) : Clientbound
 
-    /**
-     * The latest presence of [user], null without one.
-     */
-    @Serializable
-    @SerialName("Presence")
-    public data class Presence(val user: UserRef, val presence: Serverbound.Presence? = null) : Clientbound
-
     public data class Unknown(val name: String, val content: JsonElement?) : Clientbound
 }

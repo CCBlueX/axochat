@@ -93,16 +93,4 @@ class AxochatCodecTest {
         assertEquals(Channel.Direct("a"), created.report.channel)
         assertEquals("hi", created.report.content)
     }
-
-    @Test
-    fun `presence wire form`() {
-        assertEquals(
-            """{"m":"Presence","c":{"state":"menu","timezone":"Europe/Berlin","time":1}}""",
-            AxochatCodec.encode(Serverbound.Presence(PresenceState.Menu, timezone = "Europe/Berlin", time = 1)),
-        )
-        val answer = assertIs<Clientbound.Presence>(AxochatCodec.decode(
-            """{"m":"Presence","c":{"user":{"id":"a","kind":"account","name":"N"},"presence":null}}""",
-        ))
-        assertNull(answer.presence)
-    }
 }

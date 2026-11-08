@@ -6,7 +6,6 @@ mod jwt;
 mod login;
 mod message;
 mod mojang;
-mod presence;
 mod punish;
 mod report;
 
@@ -86,10 +85,6 @@ impl Handler<ServerPacketId> for ChatServer {
             }
             ServerPacket::RequestReports => self.handle_request_reports(user_id, ctx),
             ServerPacket::ResolveReport { id } => self.handle_resolve_report(user_id, id),
-            ServerPacket::Presence(presence) => self.handle_presence(user_id, presence),
-            ServerPacket::RequestPresence { user } => {
-                self.handle_request_presence(user_id, user, ctx);
-            }
             ServerPacket::RequestUserCount => {
                 self.send_user_count(user_id);
             }
