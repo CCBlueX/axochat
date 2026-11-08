@@ -77,6 +77,8 @@ class AxochatCodecTest {
             AxochatCodec.decode("""{"m":"Punished","c":{"kind":"mute","reason":"spam","expires":60000}}"""),
         )
         assertEquals(Clientbound.Punished(PunishmentKind.Mute, "spam", 60000), punished)
+        assertEquals(Clientbound.MessageRemoved(7), AxochatCodec.decode("""{"m":"MessageRemoved","c":{"id":7}}"""))
+        assertEquals("""{"m":"RemoveMessage","c":{"id":7}}""", AxochatCodec.encode(Serverbound.RemoveMessage(7)))
     }
 
     @Test

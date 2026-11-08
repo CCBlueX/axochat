@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{Api, RoleDefinition};
 use crate::auth::{Authenticator, UserInfo};
+use crate::filter::Filters;
 use crate::ip::RealIp;
 use crate::message::{MessageValidator, RateLimiter};
 use crate::moderation::Moderation;
@@ -68,6 +69,7 @@ pub struct ChatServer {
     authenticator: Option<Authenticator>,
     validator: MessageValidator,
     moderation: Moderation,
+    filters: Filters,
     store: Addr<Store>,
     config: Config,
     history: History,
@@ -78,7 +80,7 @@ pub struct ChatServer {
 }
 
 impl ChatServer {
-    pub fn new(config: Config, store: Addr<Store>, moderation: Moderation) -> ChatServer {
+    pub fn new(config: Config, store: Addr<Store>, moderation: Moderation, filters: Filters) -> ChatServer {
         ChatServer {
             connections: HashMap::new(),
             users: HashMap::new(),
@@ -90,6 +92,7 @@ impl ChatServer {
             authenticator: Authenticator::new(&config.auth),
             validator: MessageValidator::new(config.message.clone()),
             moderation,
+            filters,
             store,
             config,
             history: History::new(),
@@ -403,6 +406,13 @@ enum ClientPacket {
         time: i64,
         author: Author,
         content: String,
+        /// Staff only: what the author wrote, if it was censored.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
+    },
+    /// A message screening or staff took back after it was delivered.
+    MessageRemoved {
+        id: u64,
     },
     Punished {
         kind: PunishmentKind,
@@ -530,6 +540,7 @@ enum ServerPacket {
     },
     RequestReports,
     ResolveReport { id: Uuid },
+    RemoveMessage { id: u64 },
 }
 
 #[derive(Message)]

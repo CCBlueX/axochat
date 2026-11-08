@@ -31,6 +31,8 @@ pub enum Error {
     Uuid { source: uuid::Error },
     #[snafu(display("axochat: {}", source))]
     AxoChat { source: ClientError },
+    #[snafu(display("config: {}", message))]
+    Config { message: String },
 }
 
 impl From<io::Error> for Error {
