@@ -6,9 +6,6 @@ All packets are sent to the `/ws` endpoint.
 **Table of Contents**
 
 - [The AxoChat protocol](#the-axochat-protocol)
-- [Structures](#structures)
-    - [Id](#id)
-    - [UserInfo](#userinfo)
 - [Handshake](#handshake)
 - [Minecraft proof](#minecraft-proof)
 - [Channels](#channels)
@@ -21,6 +18,10 @@ All packets are sent to the `/ws` endpoint.
         - [MojangInfo](#mojanginfo)
         - [NewJWT](#newjwt)
         - [PrivateMessage](#privatemessage)
+        - [Punished](#punished)
+        - [Punishments](#punishments)
+        - [ReportCreated](#reportcreated)
+        - [Reports](#reports)
         - [Success](#success)
         - [UserCount](#usercount)
         - [Welcome](#welcome)
@@ -32,10 +33,16 @@ All packets are sent to the `/ws` endpoint.
         - [LoginJWT](#loginjwt)
         - [LoginMojang](#loginmojang)
         - [Message](#message-1)
+        - [Pardon](#pardon)
         - [PrivateMessage](#privatemessage-1)
+        - [Punish](#punish)
+        - [Report](#report)
         - [RequestJWT](#requestjwt)
         - [RequestMojangInfo](#requestmojanginfo)
+        - [RequestPunishments](#requestpunishments)
+        - [RequestReports](#requestreports)
         - [RequestUserCount](#requestusercount)
+        - [ResolveReport](#resolvereport)
         - [UnbanUser](#unbanuser)
 
 <!-- markdown-toc end -->
