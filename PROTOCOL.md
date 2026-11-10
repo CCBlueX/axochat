@@ -208,13 +208,18 @@ clients hide the message or replace its text with a note that it was removed.
 Filters only look at global messages of users who are not staff.
 
 - `id` is the `id` of the [ChatMessage](#chatmessage).
+- `reason` is only sent to staff, when a filter removed the message: why.
+- `muted` is only sent to staff, when the author was muted for it: when the mute ends,
+  in milliseconds since the Unix epoch. The author also gets [Punished](#punished).
 
 **Example**
 ```json
 {
     "m": "MessageRemoved",
     "c": {
-        "id": 4182
+        "id": 4182,
+        "reason": "slur or hate",
+        "muted": 1791532800000
     }
 }
 ```
