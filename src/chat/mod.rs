@@ -413,6 +413,12 @@ enum ClientPacket {
     /// A message screening or staff took back after it was delivered.
     MessageRemoved {
         id: u64,
+        /// Staff only: why a filter removed it.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        /// Staff only: when the mute the author got for it ends.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        muted: Option<i64>,
     },
     Punished {
         kind: PunishmentKind,

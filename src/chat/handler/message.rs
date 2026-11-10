@@ -9,6 +9,7 @@ use crate::chat::{
 use crate::entity::{punishment::Kind, user};
 use crate::error::*;
 use crate::message::RateLimiter;
+use crate::moderation::Punishment;
 use crate::store::{Identify, IdentityKey, Store};
 use log::*;
 
@@ -111,14 +112,40 @@ impl ChatServer {
             let check = async move { (screen.name(), screen.violation(&content).await) };
             ctx.spawn(check.into_actor(self).map(move |(name, result), actor, _ctx| match result {
                 Ok(Some(reason)) => {
-                    if actor.remove_message(id) {
-                        info!("The {} filter removed message {} for `{}`.", name, id, reason);
-                    }
+                    let Some(author) = actor.history.get(id).filter(|recorded| !recorded.removed).map(|r| r.author)
+                    else {
+                        return;
+                    };
+                    info!("The {} filter removed message {} for `{}`.", name, id, reason);
+                    let muted = actor.filter_mute(author, &reason);
+                    actor.remove_message(id, Some(reason), muted);
                 }
                 Ok(None) => {}
                 Err(err) => warn!("The {} filter could not check message {}: {}", name, id, err),
             }));
         }
+    }
+
+    /// Mutes the author of a removed message unless they already are; when the mute ends.
+    fn filter_mute(&mut self, author: Uuid, reason: &str) -> Option<i64> {
+        let duration = self.config.filter.mute?;
+        let now = now_ms();
+        if self.moderation.find(Kind::Mute, Some(author), None, now).is_some() {
+            return None;
+        }
+        let expires_at = now.saturating_add(duration.as_millis() as i64);
+        let id = new_id(&mut self.rng);
+        self.punish(Punishment {
+            id,
+            kind: Kind::Mute,
+            user: Some(author),
+            ip: None,
+            reason: format!("Removed message: {}", reason),
+            issued_by: None,
+            created_at: now,
+            expires_at: Some(expires_at),
+        });
+        Some(expires_at)
     }
 
     pub(super) fn handle_remove_message(&mut self, user_id: InternalId, id: u64) {
@@ -128,26 +155,31 @@ impl ChatServer {
         }
         if self.history.get(id).is_none() {
             self.send_error(user_id, ClientError::InvalidId);
-        } else if self.remove_message(id) {
+        } else if self.remove_message(id, None, None) {
             info!("`{}` removed message {}.", user_id, id);
         }
     }
 
-    /// Tells everyone who could have seen the message; clients without a handshake cannot be told.
-    /// False if it was already removed or is too old.
-    fn remove_message(&mut self, id: u64) -> bool {
+    /// Tells everyone who could have seen the message, staff also why and how long the author is muted;
+    /// clients without a handshake cannot be told. False if it was already removed or is too old.
+    fn remove_message(&mut self, id: u64, reason: Option<String>, muted: Option<i64>) -> bool {
         let Some(recorded) = self.history.get_mut(id).filter(|recorded| !recorded.removed) else { return false };
         recorded.removed = true;
         let (author, audience) = (recorded.author, recorded.audience);
-        let viewers = self.connections.values().filter(|session| {
+        let viewers = self.connections.iter().filter(|(_, session)| {
             session.hello
                 && match audience {
                     Audience::Global => true,
                     Audience::Direct { receiver } => session.stored_id.is_some_and(|user| user == author || user == receiver),
                 }
         });
-        for session in viewers {
-            send_message(&session.addr, ClientPacket::MessageRemoved { id }, "removal");
+        for (viewer, session) in viewers {
+            let packet = if self.is_staff(*viewer) {
+                ClientPacket::MessageRemoved { id, reason: reason.clone(), muted }
+            } else {
+                ClientPacket::MessageRemoved { id, reason: None, muted: None }
+            };
+            send_message(&session.addr, packet, "removal");
         }
         true
     }
