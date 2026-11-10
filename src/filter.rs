@@ -39,6 +39,7 @@ pub struct Llm {
 impl Filters {
     pub fn new(config: &FilterConfig) -> Result<Filters, String> {
         let client = reqwest::Client::builder()
+            .user_agent(concat!("axochat/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(10))
             .build()
             .expect("could not build http client");
@@ -191,7 +192,12 @@ impl Llm {
             ChatMessage { role: "system", content: &self.prompt },
             ChatMessage { role: "user", content: text },
         ];
-        let mut request = self.client.post(&self.url).json(&ChatRequest { model: &self.model, messages });
+        // OpenCode Go refuses requests without a session, and caches the system prompt per session
+        let mut request = self
+            .client
+            .post(&self.url)
+            .header("x-opencode-session", "axochat-filter")
+            .json(&ChatRequest { model: &self.model, messages });
         if let Some(key) = &self.key {
             request = request.bearer_auth(key);
         }

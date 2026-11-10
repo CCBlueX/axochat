@@ -175,6 +175,10 @@ pub struct FilterConfig {
     /// A file with the system prompt, which asks for `REMOVE` or `KEEP`; a built-in one without.
     #[arg(long = "llm-prompt", env = "LLM_PROMPT")]
     pub llm_prompt: Option<PathBuf>,
+
+    /// How long the author of a message a filter removed is muted; unset mutes nobody.
+    #[arg(long = "filter-mute", env = "FILTER_MUTE", value_parser = humantime::parse_duration)]
+    pub mute: Option<Duration>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]

@@ -91,10 +91,13 @@ public sealed interface Clientbound {
 
     /**
      * A [ChatMessage] a server filter or staff took back after it was delivered; clients hide it or mark it as removed.
+     *
+     * @param reason staff only: why a filter removed it
+     * @param muted staff only: milliseconds since the Unix epoch when the mute the author got for it ends
      */
     @Serializable
     @SerialName("MessageRemoved")
-    public data class MessageRemoved(val id: Long) : Clientbound
+    public data class MessageRemoved(val id: Long, val reason: String? = null, val muted: Long? = null) : Clientbound
 
     /**
      * The receiver was just punished; a ban also ends the login.
