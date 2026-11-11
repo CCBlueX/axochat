@@ -188,9 +188,11 @@ struct Reply {
 
 impl Llm {
     async fn violation(&self, text: &str) -> Result<Option<String>, reqwest::Error> {
+        // without the tags, a short message like "what is this" gets an answer instead of a verdict
+        let message = format!("<message>{}</message>", text);
         let messages = [
             ChatMessage { role: "system", content: &self.prompt },
-            ChatMessage { role: "user", content: text },
+            ChatMessage { role: "user", content: &message },
         ];
         // OpenCode Go refuses requests without a session, and caches the system prompt per session
         let mut request = self
