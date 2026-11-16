@@ -189,10 +189,6 @@ impl ChatServer {
         }));
     }
 
-    fn has_staff_role(&self, roles: &[String]) -> bool {
-        roles.iter().any(|role| self.role(role).is_some_and(|role| role.is_staff))
-    }
-
     fn role(&self, id: &str) -> Option<&RoleDefinition> {
         self.roles.iter().find(|role| role.id == id)
     }
@@ -200,17 +196,17 @@ impl ChatServer {
     /// Whether the logged in user of a connection is staff.
     fn is_staff(&self, user_id: InternalId) -> bool {
         self.online_user(user_id)
-            .is_some_and(|user| user.service || self.has_staff_role(&user.roles))
+            .is_some_and(|user| user.service || user.staff)
     }
 
     /// Whether the logged in user of a connection may use color codes and emoji.
     fn has_perks(&self, user_id: InternalId) -> bool {
         self.online_user(user_id)
-            .is_some_and(|user| user.service || self.has_perk_role(&user.roles))
+            .is_some_and(|user| user.service || self.has_perk_role(user.staff, &user.roles))
     }
 
-    fn has_perk_role(&self, roles: &[String]) -> bool {
-        self.has_staff_role(roles) || roles.iter().any(|role| self.config.message.perk_roles.contains(role))
+    fn has_perk_role(&self, staff: bool, roles: &[String]) -> bool {
+        staff || roles.iter().any(|role| self.config.message.perk_roles.contains(role))
     }
 
     fn online_user(&self, user_id: InternalId) -> Option<&UserSession> {
@@ -254,7 +250,7 @@ impl ChatServer {
                 Some(role) => RoleView {
                     id: role.id.clone(),
                     name: role.display_name.clone(),
-                    staff: role.is_staff,
+                    staff: role.is_staff(),
                 },
                 None => RoleView {
                     id: id.clone(),
@@ -316,6 +312,8 @@ struct UserSession {
     kind: Kind,
     /// Service API role ids.
     roles: Vec<String>,
+    /// Has the Service API permission to moderate.
+    staff: bool,
     /// Logged in with the service token.
     service: bool,
 }
@@ -326,6 +324,7 @@ struct Relayed {
     legacy: UserInfo,
     /// Service API role ids.
     roles: Vec<String>,
+    staff: bool,
     rate_limiter: RateLimiter,
     fetched_at: Instant,
 }

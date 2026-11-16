@@ -1,7 +1,7 @@
 use crate::api::ApiError;
 use crate::chat::{ChatServer, InternalId};
 use crate::error::ClientError;
-use crate::store::IdentityKey;
+use crate::store::{Identified, IdentityKey};
 use log::*;
 
 use super::login::{identify, Verified};
@@ -28,9 +28,11 @@ impl ChatServer {
                         ClientError::Internal
                     }
                 })?;
-                let request = visit.identify(IdentityKey::Account(account.user_id), account.nickname, account.minecraft_uuid);
-                let model = identify(store, request).await?;
-                Ok(Verified { model, roles: account.roles, minecraft: None, service: false })
+                let (roles, staff, linked) = (account.role_ids(), account.is_staff(), account.minecraft_uuid());
+                let name = account.nickname.unwrap_or_else(|| account.uid.clone());
+                let request = visit.identify(IdentityKey::Account(account.uid), name, linked);
+                let Identified { user: model, absorbed } = identify(store, request).await?;
+                Ok(Verified { model, roles, staff, absorbed, minecraft: None, service: false })
             }
             .into_actor(self)
             .map(move |result, actor, _ctx| actor.finish_login(user_id, result, allow_messages)),
@@ -51,8 +53,8 @@ impl ChatServer {
         let store = self.store.clone();
         ctx.spawn(
             async move {
-                let model = identify(store, request).await?;
-                Ok(Verified { model, roles: Vec::new(), minecraft: None, service: true })
+                let model = identify(store, request).await?.user;
+                Ok(Verified { model, roles: Vec::new(), staff: false, absorbed: None, minecraft: None, service: true })
             }
             .into_actor(self)
             .map(move |result, actor, _ctx| actor.finish_login(user_id, result, allow_messages)),

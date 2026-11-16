@@ -12,7 +12,7 @@ cargo run --release -- start
 ```
 
 It needs a MySQL or MariaDB database; tables are created on startup.
-Staff are the users with a staff role in the LiquidBounce Service API (`API_URL`, `API_TOKEN`).
+Staff are the users whose roles in the LiquidBounce Service API let them moderate (`API_URL`, `API_INTERNAL_URL`, `API_DIRECTORY_TOKEN`).
 The Docker image runs in `/data`, where the certificates are kept; mount a volume there.
 `docker compose up -d` runs it from `.env`; `COMPOSE_PROFILES=tunnel` and `TUNNEL_TOKEN` add a Cloudflare tunnel.
 

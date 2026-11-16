@@ -10,7 +10,8 @@ use uuid::Uuid;
 pub struct Api {
     client: reqwest::Client,
     url: String,
-    token: Option<String>,
+    /// Where `/internal` is reachable, and the token for it.
+    directory: Option<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -28,40 +29,58 @@ impl fmt::Display for ApiError {
     }
 }
 
+const MODERATE: &str = "moderate";
+
+/// An account as `/me` and `/internal/users` answer it.
 #[derive(Debug, Deserialize)]
 pub struct Account {
-    pub user_id: String,
-    pub nickname: String,
+    pub uid: String,
+    /// Absent for an account that never signed in to the Service API.
+    pub nickname: Option<String>,
     #[serde(default)]
-    pub roles: Vec<String>,
+    roles: Vec<RoleDefinition>,
     #[serde(default)]
-    pub minecraft_uuid: Option<Uuid>,
+    permissions: Vec<String>,
+    minecraft: Option<MinecraftLink>,
+}
+
+impl Account {
+    pub fn is_staff(&self) -> bool {
+        self.permissions.iter().any(|permission| permission == MODERATE)
+    }
+
+    pub fn role_ids(&self) -> Vec<String> {
+        self.roles.iter().map(|role| role.id.clone()).collect()
+    }
+
+    pub fn minecraft_uuid(&self) -> Option<Uuid> {
+        self.minecraft.as_ref().map(|link| link.uuid)
+    }
 }
 
 #[derive(Debug, Deserialize)]
-pub struct LinkedAccount {
-    pub user_id: String,
-    pub nickname: Option<String>,
-    #[serde(default)]
-    pub roles: Vec<String>,
+struct MinecraftLink {
+    uuid: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoleDefinition {
     pub id: String,
     pub display_name: String,
-    pub is_staff: bool,
+    #[serde(default)]
+    permissions: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Profile {
-    pub uid: String,
-    pub nickname: String,
+impl RoleDefinition {
+    pub fn is_staff(&self) -> bool {
+        self.permissions.iter().any(|permission| permission == MODERATE)
+    }
 }
 
-#[derive(Debug, Deserialize)]
-struct AssignedRole {
-    role_id: String,
+#[derive(Deserialize)]
+struct Page<T> {
+    items: Vec<T>,
 }
 
 impl Api {
@@ -72,58 +91,46 @@ impl Api {
                 .build()
                 .expect("could not build http client"),
             url: config.url.trim_end_matches('/').to_owned(),
-            token: config.token.clone(),
+            directory: config
+                .internal_url
+                .as_deref()
+                .zip(config.directory_token.clone())
+                .map(|(url, token)| (url.trim_end_matches('/').to_owned(), token)),
         }
     }
 
+    /// The account an access token belongs to.
     pub async fn account(&self, access_token: &str) -> Result<Account, ApiError> {
-        let request = self
-            .client
-            .get(format!("{}/api/v3/oauth/user", self.url))
-            .bearer_auth(access_token);
+        let request = self.client.get(format!("{}/me", self.url)).bearer_auth(access_token);
         fetch(request).await?.ok_or(ApiError::Unauthorized)
     }
 
     /// The account whose main Minecraft account is `uuid`.
-    pub async fn linked_account(&self, uuid: Uuid) -> Result<Option<LinkedAccount>, ApiError> {
-        let Some(token) = &self.token else { return Ok(None) };
-        let request = self
-            .client
-            .get(format!("{}/api/v2/user/by-minecraft/{}", self.url, uuid))
-            .bearer_auth(token);
-        fetch(request).await
+    pub async fn linked_account(&self, uuid: Uuid) -> Result<Option<Account>, ApiError> {
+        let Some(request) = self.internal(&format!("users?minecraftUuid={}", uuid)) else { return Ok(None) };
+        let page: Option<Page<Account>> = fetch(request).await?;
+        Ok(page.and_then(|page| page.items.into_iter().next()))
     }
 
     pub async fn roles(&self) -> Result<Vec<RoleDefinition>, ApiError> {
-        let Some(token) = &self.token else { return Ok(Vec::new()) };
-        let request = self.client.get(format!("{}/api/v2/user/roles", self.url)).bearer_auth(token);
+        let Some(request) = self.internal("roles") else { return Ok(Vec::new()) };
         Ok(fetch(request).await?.unwrap_or_default())
     }
 
-    /// The last nickname the Service API saw for an account, `None` for an unknown account.
-    pub async fn profile(&self, uid: &str) -> Result<Option<Profile>, ApiError> {
-        let Some(token) = &self.token else { return Ok(None) };
+    /// `None` for an account the Service API keeps nothing about.
+    pub async fn account_by_uid(&self, uid: &str) -> Result<Option<Account>, ApiError> {
         // ids are plain, so they go into the URL as they are
         if uid.is_empty() || !uid.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_') {
             return Ok(None);
         }
-        let request = self
-            .client
-            .get(format!("{}/api/v2/user/profiles?q={}", self.url, uid))
-            .bearer_auth(token);
-        let profiles: Vec<Profile> = fetch(request).await?.unwrap_or_default();
-        Ok(profiles.into_iter().find(|profile| profile.uid == uid))
+        let Some(request) = self.internal(&format!("users/{}", uid)) else { return Ok(None) };
+        fetch(request).await
     }
 
-    /// Role ids of an account; `uid` must be one [Api::profile] found.
-    pub async fn account_roles(&self, uid: &str) -> Result<Vec<String>, ApiError> {
-        let Some(token) = &self.token else { return Ok(Vec::new()) };
-        let request = self
-            .client
-            .get(format!("{}/api/v2/user/{}/roles", self.url, uid))
-            .bearer_auth(token);
-        let roles: Vec<AssignedRole> = fetch(request).await?.unwrap_or_default();
-        Ok(roles.into_iter().map(|role| role.role_id).collect())
+    /// `None` without the settings for `/internal`.
+    fn internal(&self, path: &str) -> Option<RequestBuilder> {
+        let (url, token) = self.directory.as_ref()?;
+        Some(self.client.get(format!("{}/internal/{}", url, path)).bearer_auth(token))
     }
 }
 
@@ -142,5 +149,26 @@ async fn fetch<T: DeserializeOwned>(request: RequestBuilder) -> Result<Option<T>
             .map(Some)
             .map_err(|err| ApiError::Unavailable(err.to_string())),
         status => Err(ApiError::Unavailable(status.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn staff_comes_from_permissions() {
+        let account: Account = serde_json::from_str(
+            r#"{"uid":"a","roles":[{"id":"staff","displayName":"Staff","permissions":["moderate"]}],
+                "permissions":["cosmetics","moderate"],"cosmetics":[],
+                "minecraft":{"uuid":"069a79f4-44e9-4726-a5be-fca90e38aaf5","linkedAt":"2026-01-01T00:00:00Z"}}"#,
+        )
+        .unwrap();
+        assert!(account.is_staff());
+        assert_eq!(account.role_ids(), ["staff"]);
+        assert!(account.minecraft_uuid().is_some());
+
+        let account: Account = serde_json::from_str(r#"{"uid":"a","roles":[{"id":"staff","displayName":"Staff","permissions":[]}],"permissions":[]}"#).unwrap();
+        assert!(!account.is_staff());
     }
 }
