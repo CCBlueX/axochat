@@ -249,11 +249,15 @@ pub struct MojangConfig {
 
 #[derive(Args, Clone)]
 pub struct ApiConfig {
-    /// The LiquidBounce Service API, which checks account logins and knows their roles.
+    /// The LiquidBounce Service API, which checks account logins and knows their roles and permissions.
     #[arg(id = "api_url", long = "api-url", env = "API_URL", default_value = "https://api.liquidbounce.net")]
     pub url: String,
 
-    /// The Service API token for roles and linked Minecraft accounts.
-    #[arg(long = "api-token", env = "API_TOKEN", hide_env_values = true)]
-    pub token: Option<String>,
+    /// Where the Service API serves `/internal`, which is not reachable from the internet.
+    #[arg(long = "api-internal-url", env = "API_INTERNAL_URL", requires = "directory_token")]
+    pub internal_url: Option<String>,
+
+    /// The Service API directory token, for roles and for accounts by uid and Minecraft account.
+    #[arg(long = "api-directory-token", env = "API_DIRECTORY_TOKEN", hide_env_values = true, requires = "internal_url")]
+    pub directory_token: Option<String>,
 }

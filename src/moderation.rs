@@ -76,6 +76,13 @@ impl Moderation {
         self.punishments.push(punishment);
     }
 
+    /// Punishments of user `from` become those of user `to`.
+    pub fn reassign(&mut self, from: Uuid, to: Uuid) {
+        for punishment in self.punishments.iter_mut().filter(|p| p.user == Some(from)) {
+            punishment.user = Some(to);
+        }
+    }
+
     pub fn of_user(&self, user: Uuid, now: i64) -> Vec<&Punishment> {
         self.punishments.iter().filter(|p| p.is_active(now) && p.user == Some(user)).collect()
     }

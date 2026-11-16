@@ -41,7 +41,7 @@ impl ChatServer {
                         actor.send_error(user_id, ClientError::Internal);
                         return;
                     };
-                    let target_is_staff = actor.users.get(&target.id).is_some_and(|user| actor.has_staff_role(&user.roles));
+                    let target_is_staff = actor.users.get(&target.id).is_some_and(|user| user.staff);
                     if target_is_staff {
                         actor.send_error(user_id, ClientError::NotPermitted);
                         return;

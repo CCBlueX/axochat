@@ -302,7 +302,7 @@ impl ChatServer {
 
         let lookup = account_user(self.api.clone(), self.store.clone(), account.clone(), new_id(&mut self.rng), now_ms());
         ctx.spawn(lookup.into_actor(self).map(move |result, actor, ctx| match result {
-            Ok((model, roles)) => {
+            Ok((model, roles, staff)) => {
                 let legacy = UserInfo {
                     name: model.name.clone(),
                     uuid: model.minecraft_uuid.or(model.linked_minecraft_uuid).unwrap_or_else(Uuid::nil),
@@ -312,11 +312,13 @@ impl ChatServer {
                     account: account.clone(),
                     legacy: legacy.clone(),
                     roles: Vec::new(),
+                    staff: false,
                     rate_limiter: RateLimiter::new(message_config.clone()),
                     fetched_at: Instant::now(),
                 });
                 relayed.legacy = legacy;
                 relayed.roles = roles;
+                relayed.staff = staff;
                 relayed.fetched_at = Instant::now();
                 actor.send_for(user_id, model.id, &account, content, ctx);
             }
@@ -339,7 +341,8 @@ impl ChatServer {
         let relayed = self.relayed.get(&id).ok_or(ClientError::Internal)?;
         let roles = relayed.roles.clone();
         let legacy = relayed.legacy.clone();
-        let (staff, perks) = (self.has_staff_role(&roles), self.has_perk_role(&roles));
+        let staff = relayed.staff;
+        let perks = self.has_perk_role(staff, &roles);
         let now = now_ms();
         if !staff && self.moderation.find(Kind::Ban, Some(id), None, now).is_some() {
             return Err(ClientError::Banned);
@@ -391,31 +394,30 @@ impl ChatServer {
     }
 }
 
-/// The user of a LiquidBounce Account, created like on its first login, and its roles.
+/// The user of a LiquidBounce Account, created like on its first login, its roles and whether it is staff.
 async fn account_user(
     api: Arc<Api>,
     store: Addr<Store>,
     account: String,
     id: Uuid,
     at: i64,
-) -> std::result::Result<(user::Model, Vec<String>), ClientError> {
+) -> std::result::Result<(user::Model, Vec<String>, bool), ClientError> {
     let unavailable = |err: ApiError| {
         warn!("Could not look up account `{}`: {}", account, err);
         ClientError::Internal
     };
-    let profile = api
-        .profile(&account)
+    let found = api
+        .account_by_uid(&account)
         .await
         .map_err(unavailable)?
         .ok_or_else(|| ClientError::UnknownUser(account.clone()))?;
-    let roles = api.account_roles(&account).await.map_err(unavailable)?;
     let request = Identify {
         key: IdentityKey::Account(account.clone()),
-        name: account_name(&profile.nickname, &account),
+        name: account_name(found.nickname.as_deref().unwrap_or_default(), &account),
         linked: None,
         ip: None,
         id,
         at,
     };
-    Ok((identify(store, request).await?, roles))
+    Ok((identify(store, request).await?.user, found.role_ids(), found.is_staff()))
 }

@@ -202,7 +202,7 @@ impl ChatServer {
             let found = Found {
                 user: UserRef::from(&model),
                 last_ip: model.last_ip.and_then(|ip| ip.parse().ok()),
-                staff: actor.users.get(&model.id).is_some_and(|user| actor.has_staff_role(&user.roles)),
+                staff: actor.users.get(&model.id).is_some_and(|user| user.staff),
             };
             then(actor, Some(found));
         }));
@@ -226,7 +226,7 @@ impl ChatServer {
                 name: session.user.as_ref()?.name.clone(),
             },
             last_ip: Some(session.ip),
-            staff: self.has_staff_role(&online.roles),
+            staff: online.staff,
         })
     }
 }

@@ -4,7 +4,7 @@ use crate::chat::{new_id, now_ms, ChatServer, ClientPacket, InternalId, Kind, Su
 use crate::entity::{punishment, user};
 use crate::error::ClientError;
 use crate::message::RateLimiter;
-use crate::store::{Identify, IdentityKey, Store};
+use crate::store::{Identified, Identify, IdentityKey, Store};
 use log::*;
 
 use actix::*;
@@ -18,6 +18,10 @@ const MAX_NAME: usize = 32;
 pub(super) struct Verified {
     pub model: user::Model,
     pub roles: Vec<String>,
+    /// May moderate.
+    pub staff: bool,
+    /// A Minecraft user the store merged into `model`.
+    pub absorbed: Option<Uuid>,
     pub minecraft: Option<UserInfo>,
     /// Logged in with the service token.
     pub service: bool,
@@ -78,8 +82,11 @@ impl ChatServer {
         };
 
         let model = &verified.model;
+        if let Some(former) = verified.absorbed {
+            self.moderation.reassign(former, model.id);
+        }
         let banned = !verified.service
-            && !self.has_staff_role(&verified.roles)
+            && !verified.staff
             && self
                 .moderation
                 .find(punishment::Kind::Ban, Some(model.id), Some(session.ip), now_ms())
@@ -103,10 +110,12 @@ impl ChatServer {
             connections: HashSet::new(),
             kind,
             roles: Vec::new(),
+            staff: false,
             service: verified.service,
         });
         online.connections.insert(user_id);
         online.roles = verified.roles;
+        online.staff = verified.staff;
 
         let session = self.connections.get_mut(&user_id).expect("checked above");
         session.user = Some(info);
@@ -135,20 +144,21 @@ pub(super) async fn login_minecraft(
         warn!("Could not look up the account linked to `{}`: {}", player.uuid, err);
         None
     });
-    let (request, roles) = match linked {
+    let (request, roles, staff) = match linked {
         Some(account) => {
+            let (roles, staff) = (account.role_ids(), account.is_staff());
             let name = account.nickname.unwrap_or_else(|| player.name.clone());
-            (visit.identify(IdentityKey::Account(account.user_id), name, Some(player.uuid)), account.roles)
+            (visit.identify(IdentityKey::Account(account.uid), name, Some(player.uuid)), roles, staff)
         }
-        None => (visit.identify(IdentityKey::Minecraft(player.uuid), player.name.clone(), None), Vec::new()),
+        None => (visit.identify(IdentityKey::Minecraft(player.uuid), player.name.clone(), None), Vec::new(), false),
     };
-    let model = identify(store, request).await?;
-    Ok(Verified { model, roles, minecraft: Some(player), service: false })
+    let Identified { user: model, absorbed } = identify(store, request).await?;
+    Ok(Verified { model, roles, staff, absorbed, minecraft: Some(player), service: false })
 }
 
-pub(super) async fn identify(store: Addr<Store>, request: Identify) -> Result<user::Model, ClientError> {
+pub(super) async fn identify(store: Addr<Store>, request: Identify) -> Result<Identified, ClientError> {
     match store.send(request).await {
-        Ok(Ok(model)) => Ok(model),
+        Ok(Ok(identified)) => Ok(identified),
         Ok(Err(err)) => {
             error!("Could not store user: {}", err);
             Err(ClientError::Internal)
