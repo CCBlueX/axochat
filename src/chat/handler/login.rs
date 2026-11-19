@@ -123,12 +123,7 @@ impl ChatServer {
         session.minecraft = verified.minecraft;
         session.session_hash = None;
 
-        if session.hello {
-            if let Some(user) = self.author(user_id) {
-                let staff = self.is_staff(user_id);
-                self.send(user_id, ClientPacket::Welcome { user, staff });
-            }
-        }
+        self.send_welcome(user_id);
         self.send(user_id, ClientPacket::Success { reason: SuccessReason::Login });
     }
 }

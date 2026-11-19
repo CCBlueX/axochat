@@ -30,6 +30,7 @@ impl Handler<Connect> for ChatServer {
                 ip: msg.ip,
                 session_hash: None,
                 hello: false,
+                client_key: None,
                 user: None,
                 minecraft: None,
                 stored_id: None,

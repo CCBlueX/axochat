@@ -65,6 +65,8 @@ pub struct ChatServer {
     api: Arc<Api>,
     /// In the order of the Service API.
     roles: Vec<RoleDefinition>,
+    /// The names of the clients registered with the Service API, by their key.
+    clients: HashMap<String, String>,
     rng: rand_hc::Hc128Rng,
     authenticator: Option<Authenticator>,
     validator: MessageValidator,
@@ -88,6 +90,7 @@ impl ChatServer {
 
             api: Arc::new(Api::new(&config.api)),
             roles: Vec::new(),
+            clients: HashMap::new(),
             rng: Hc128Rng::try_from_rng(&mut SysRng).expect("could not initialize hc128 rng"),
             authenticator: Authenticator::new(&config.auth),
             validator: MessageValidator::new(config.message.clone()),
@@ -119,7 +122,11 @@ impl Actor for ChatServer {
 
     fn started(&mut self, ctx: &mut Context<Self>) {
         self.refresh_roles(ctx);
-        ctx.run_interval(ROLE_REFRESH, |actor, ctx| actor.refresh_roles(ctx));
+        self.refresh_clients(ctx);
+        ctx.run_interval(ROLE_REFRESH, |actor, ctx| {
+            actor.refresh_roles(ctx);
+            actor.refresh_clients(ctx);
+        });
         ctx.run_interval(MAINTENANCE, |actor, _ctx| {
             let now = now_ms();
             actor.moderation.prune(now);
@@ -189,6 +196,28 @@ impl ChatServer {
         }));
     }
 
+    /// Sessions of a client whose name changed get `Welcome` again, so they still know their own client's name.
+    fn refresh_clients(&mut self, ctx: &mut Context<Self>) {
+        let api = self.api.clone();
+        ctx.spawn(async move { api.chat_clients().await }.into_actor(self).map(|result, actor, _ctx| match result {
+            Ok(clients) => {
+                let previous = std::mem::replace(&mut actor.clients, clients);
+                let renamed: Vec<InternalId> = actor
+                    .connections
+                    .iter()
+                    .filter(|(_, session)| {
+                        session.client_key.as_ref().is_some_and(|key| previous.get(key) != actor.clients.get(key))
+                    })
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in renamed {
+                    actor.send_welcome(id);
+                }
+            }
+            Err(err) => warn!("Could not refresh clients: {}", err),
+        }));
+    }
+
     fn role(&self, id: &str) -> Option<&RoleDefinition> {
         self.roles.iter().find(|role| role.id == id)
     }
@@ -237,9 +266,25 @@ impl ChatServer {
             name: info.name.clone(),
             uuid: info.uuid,
             minecraft: session.minecraft.clone().filter(|_| online.kind == Kind::Account),
+            client: self.client_name(session),
             roles: self.role_views(&online.roles),
             highlight: self.has_perks(user_id),
         })
+    }
+
+    fn client_name(&self, session: &SessionState) -> Option<String> {
+        self.clients.get(session.client_key.as_ref()?).cloned()
+    }
+
+    /// Tells a logged in session after a handshake who it is.
+    fn send_welcome(&self, user_id: InternalId) {
+        if !self.connections.get(&user_id).is_some_and(|session| session.hello) {
+            return;
+        }
+        if let Some(user) = self.author(user_id) {
+            let staff = self.is_staff(user_id);
+            self.send(user_id, ClientPacket::Welcome { user, staff });
+        }
     }
 
     /// Staff roles first, then in the order of the Service API.
@@ -293,6 +338,8 @@ pub(self) struct SessionState {
     session_hash: Option<String>,
     /// Sent `Hello`, so it understands the packets added since the original protocol.
     hello: bool,
+    /// The key the client announced with `Hello`; `ChatServer::clients` has its name if it is registered.
+    client_key: Option<String>,
     user: Option<User>,
     /// The Minecraft account a Mojang or JWT login, or a proof after an account login, verified.
     minecraft: Option<UserInfo>,
@@ -489,6 +536,9 @@ struct Author {
     /// The Minecraft account an account session proved it plays on.
     #[serde(skip_serializing_if = "Option::is_none")]
     minecraft: Option<UserInfo>,
+    /// The client the message was written with, if it announced a name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client: Option<String>,
     roles: Vec<RoleView>,
     /// Staff and perk roles stand out.
     highlight: bool,
@@ -510,7 +560,7 @@ enum ServerPacket {
     LoginMojang(User),
     LoginJWT { token: String, allow_messages: bool },
     LoginAccount { token: String, allow_messages: bool },
-    Hello { protocol: u32 },
+    Hello { protocol: u32, key: Option<String> },
     RequestJWT,
     Message { content: String },
     PrivateMessage { receiver: String, content: String },
@@ -578,7 +628,7 @@ enum SuccessReason {
 
 #[cfg(test)]
 mod tests {
-    use super::{Channel, ClientError, ClientPacket, Kind, PunishmentKind, ReportView, ServerPacket, UserRef};
+    use super::{Author, Channel, ClientError, ClientPacket, Kind, PunishmentKind, ReportView, ServerPacket, UserRef};
     use uuid::Uuid;
 
     #[test]
@@ -639,5 +689,35 @@ mod tests {
         };
         let detailed = serde_json::to_string(&detailed).unwrap();
         assert_eq!(detailed, r#"{"m":"Error","c":{"message":"InvalidCharacter","detail":"§"}}"#);
+    }
+
+    #[test]
+    fn client_wire_form() {
+        let keyed = r#"{"m":"Hello","c":{"protocol":2,"key":"0123456789abcdef"}}"#;
+        assert!(matches!(
+            serde_json::from_str(keyed),
+            Ok(ServerPacket::Hello { protocol: 2, key: Some(key) }) if key == "0123456789abcdef"
+        ));
+        let plain = r#"{"m":"Hello","c":{"protocol":2}}"#;
+        assert!(matches!(serde_json::from_str(plain), Ok(ServerPacket::Hello { protocol: 2, key: None })));
+
+        let author = |client: Option<&str>| Author {
+            id: Uuid::nil(),
+            kind: Kind::Account,
+            name: "Notch".into(),
+            uuid: Uuid::nil(),
+            minecraft: None,
+            client: client.map(Into::into),
+            roles: Vec::new(),
+            highlight: false,
+        };
+        let nil = Uuid::nil();
+        assert_eq!(
+            serde_json::to_string(&author(Some("LiquidBounce"))).unwrap(),
+            format!(
+                r#"{{"id":"{nil}","kind":"account","name":"Notch","uuid":"{nil}","client":"LiquidBounce","roles":[],"highlight":false}}"#
+            )
+        );
+        assert!(!serde_json::to_string(&author(None)).unwrap().contains("client"));
     }
 }

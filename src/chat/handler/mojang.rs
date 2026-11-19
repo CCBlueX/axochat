@@ -74,12 +74,7 @@ impl ChatServer {
                                 user.uuid = player.uuid;
                             }
                             session.minecraft = Some(player);
-                            if session.hello {
-                                if let Some(user) = actor.author(user_id) {
-                                    let staff = actor.is_staff(user_id);
-                                    actor.send(user_id, ClientPacket::Welcome { user, staff });
-                                }
-                            }
+                            actor.send_welcome(user_id);
                             actor.send(user_id, ClientPacket::Success { reason: SuccessReason::Minecraft });
                         }
                         Err(error) => actor.send_error(user_id, error),

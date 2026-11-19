@@ -327,7 +327,7 @@ impl ChatServer {
     }
 
     fn send_for(&mut self, user_id: InternalId, id: Uuid, account: &str, content: String, ctx: &mut Context<Self>) {
-        match self.check_message_for(id, &content) {
+        match self.check_message_for(user_id, id, &content) {
             Ok(sender) => self.send_global(user_id, sender, content, ctx),
             Err(error) => {
                 info!("Message of `{}` for `{}` was refused: {}", user_id, account, error);
@@ -336,8 +336,8 @@ impl ChatServer {
         }
     }
 
-    /// The checks of [ChatServer::check_message] for an account a service session sends for.
-    fn check_message_for(&mut self, id: Uuid, content: &str) -> std::result::Result<Sender, ClientError> {
+    /// The checks of [ChatServer::check_message] for an account the service session `user_id` sends for.
+    fn check_message_for(&mut self, user_id: InternalId, id: Uuid, content: &str) -> std::result::Result<Sender, ClientError> {
         let relayed = self.relayed.get(&id).ok_or(ClientError::Internal)?;
         let roles = relayed.roles.clone();
         let legacy = relayed.legacy.clone();
@@ -371,6 +371,7 @@ impl ChatServer {
                 name: legacy.name.clone(),
                 uuid: legacy.uuid,
                 minecraft: None,
+                client: self.connections.get(&user_id).and_then(|session| self.client_name(session)),
                 roles: self.role_views(&roles),
                 highlight: perks,
             },

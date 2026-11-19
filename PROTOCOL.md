@@ -58,6 +58,15 @@ They chat with [ChatMessage](#chatmessage-1) and get every message as [ChatMessa
 Clients that send no `Hello` keep the original protocol, and servers that do not know `Hello` ignore it,
 so a client that gets no answer within a few seconds uses the original protocol.
 
+`Hello` may also carry the key of the client: a public string that staff registered with the
+LiquidBounce Service API together with a name, such as `LiquidBounce`.
+The server sends that name along with every message the session writes, as `client` of the `author`,
+so clients can tell who is on another client: a message without a `client`, or with the receiver's own
+(`client` of the `user` in [Welcome](#welcome)), looks as usual, and any other gets the name in front,
+set apart from roles.
+A key the Service API does not know is ignored.
+The key is no secret, so the name tells which client a session claims to be, not which one it is.
+
 # Minecraft proof
 After [LoginAccount](#loginaccount), a session can prove the Minecraft account it plays on,
 with the same packets as a Mojang login:
@@ -128,6 +137,7 @@ to clients after a [handshake](#handshake).
             "kind": "account",
             "name": "Notch",
             "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+            "client": "LiquidBounce",
             "roles": [],
             "highlight": false
         },
@@ -437,7 +447,8 @@ This packet is sent after [RequestUserCount](#requestusercount) was received.
 ```
 
 ### Welcome
-Sent after a successful login, right before [Success](#success), to clients after a [handshake](#handshake).
+Sent after a successful login, right before [Success](#success), to clients after a [handshake](#handshake),
+and again when the name of the session's client changes.
 
 - `user` is the logged in user:
   - `id` is the id of the user on this server.
@@ -446,6 +457,9 @@ Sent after a successful login, right before [Success](#success), to clients afte
   - `uuid` is the Minecraft account shown for the user, the nil uuid if unknown.
   - `minecraft` is the `name` and `uuid` of the Minecraft account the session proved it plays on,
     left out without a [Minecraft proof](#minecraft-proof).
+  - `client` is the name registered for the key the session's client gave in [Hello](#hello-1),
+    left out without a registered key.
+    In a [ChatMessage](#chatmessage) it is the client the message was written with.
   - `roles` are the roles of the account, staff roles first: `id`, display `name` and whether it is a `staff` role.
   - `highlight` tells whether the user's messages stand out, for staff and perk roles.
 - `staff` tells whether the user may moderate.
@@ -514,6 +528,7 @@ account's message. `as` is the account id; only `{"type": "global"}` is allowed,
 are answered with `UnknownChannel`. The account's roles, mutes, bans and rate limit apply.
 Errors about such a message carry the account id in `detail`: `NotPermitted` for other sessions,
 `UnknownUser` for an unknown account.
+The message carries the `client` of the service session.
 
 ```json
 {
@@ -530,13 +545,16 @@ Errors about such a message carry the account id in `detail`: `NotPermitted` for
 Starts the [handshake](#handshake). Only answered before logging in.
 
 - `protocol` is the newest protocol the client speaks.
+- `key` is optional: the key of the client, up to 64 characters, see [Handshake](#handshake).
+  `user` in [Welcome](#welcome) shows the name it stands for.
 
 **Example**
 ```json
 {
     "m": "Hello",
     "c": {
-        "protocol": 2
+        "protocol": 2,
+        "key": "0123456789abcdef0123456789abcdef"
     }
 }
 ```

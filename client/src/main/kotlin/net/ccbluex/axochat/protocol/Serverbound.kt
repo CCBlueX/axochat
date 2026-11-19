@@ -9,9 +9,13 @@ import java.util.UUID
 
 public sealed interface Serverbound {
 
+    /**
+     * @param key the public key of this client, registered with the LiquidBounce Service API; the server sends
+     * the name registered for it along with every message, as [net.ccbluex.axochat.user.Author.client]
+     */
     @Serializable
     @SerialName("Hello")
-    public data class Hello(val protocol: Int) : Serverbound
+    public data class Hello(val protocol: Int, val key: String? = null) : Serverbound
 
     @Serializable
     @SerialName("RequestMojangInfo")

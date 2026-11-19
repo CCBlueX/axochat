@@ -34,6 +34,7 @@ public data class Role(val id: String, val name: String, val staff: Boolean)
  * @param minecraft the Minecraft account an account session proved it plays on
  * @param roles staff roles first
  * @param highlight staff and perk roles stand out
+ * @param client the name registered for the key of the client the message was written with; null without one
  */
 @Serializable
 public data class Author(
@@ -44,6 +45,7 @@ public data class Author(
     val minecraft: Player? = null,
     val roles: List<Role> = emptyList(),
     val highlight: Boolean = false,
+    val client: String? = null,
 ) {
     val isAccount: Boolean get() = kind == UserKind.Account
 }

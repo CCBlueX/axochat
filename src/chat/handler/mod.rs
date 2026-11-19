@@ -40,8 +40,8 @@ impl Handler<ServerPacketId> for ChatServer {
             ServerPacket::LoginAccount { token, allow_messages } => {
                 self.login_account(user_id, token, allow_messages, ctx);
             }
-            ServerPacket::Hello { protocol } => {
-                self.handle_hello(user_id, protocol);
+            ServerPacket::Hello { protocol, key } => {
+                self.handle_hello(user_id, protocol, key);
             }
             ServerPacket::Message { content } => self.handle_message(user_id, content, ctx),
             ServerPacket::PrivateMessage { receiver, content } => {

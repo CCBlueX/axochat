@@ -68,6 +68,22 @@ class AxochatCodecTest {
     }
 
     @Test
+    fun `clients send their key`() {
+        assertEquals("""{"m":"Hello","c":{"protocol":2}}""", AxochatCodec.encode(Serverbound.Hello(2)))
+        assertEquals(
+            """{"m":"Hello","c":{"protocol":2,"key":"0123456789abcdef"}}""",
+            AxochatCodec.encode(Serverbound.Hello(2, "0123456789abcdef")),
+        )
+
+        fun author(client: String) = assertIs<Clientbound.ChatMessage>(AxochatCodec.decode(
+            """{"m":"ChatMessage","c":{"channel":{"type":"global"},"id":7,"time":1,"content":"hi",""" +
+                """"author":{"id":"a","kind":"account","name":"A","uuid":"069a79f4-44e9-4726-a5be-fca90e38aaf5"$client}}}""",
+        )).author
+        assertEquals("Other", author(""","client":"Other"""").client)
+        assertNull(author("").client)
+    }
+
+    @Test
     fun `moderation packets`() {
         assertEquals(
             """{"m":"Punish","c":{"user":"Notch","kind":"ban","reason":"spam","include_ip":true}}""",

@@ -3,6 +3,7 @@ use crate::config::ApiConfig;
 use reqwest::{RequestBuilder, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 use uuid::Uuid;
@@ -63,6 +64,12 @@ struct MinecraftLink {
     uuid: Uuid,
 }
 
+#[derive(Deserialize)]
+struct ChatClient {
+    key: String,
+    name: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleDefinition {
@@ -115,6 +122,13 @@ impl Api {
     pub async fn roles(&self) -> Result<Vec<RoleDefinition>, ApiError> {
         let Some(request) = self.internal("roles") else { return Ok(Vec::new()) };
         Ok(fetch(request).await?.unwrap_or_default())
+    }
+
+    /// The name of every registered client by its key.
+    pub async fn chat_clients(&self) -> Result<HashMap<String, String>, ApiError> {
+        let Some(request) = self.internal("chat/clients") else { return Ok(HashMap::new()) };
+        let clients: Vec<ChatClient> = fetch(request).await?.unwrap_or_default();
+        Ok(clients.into_iter().map(|client| (client.key, client.name)).collect())
     }
 
     /// `None` for an account the Service API keeps nothing about.

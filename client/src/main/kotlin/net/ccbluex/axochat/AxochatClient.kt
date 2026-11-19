@@ -16,16 +16,18 @@ public const val PROTOCOL_VERSION: Int = 2
 /**
  * @param maxFrameSize in characters
  * @param malformed gets frames this version cannot decode
+ * @param key of this client, sent by [AxochatSession.negotiate]; users of other clients see the name registered for it
  */
 public class AxochatClient(
     public val uri: URI,
     private val http: OkHttpClient = OkHttpClient(),
     private val maxFrameSize: Int = 256 * 1024,
     private val malformed: (String) -> Unit = {},
+    private val key: String? = null,
 ) {
 
     public suspend fun connect(timeout: Duration = 10.seconds): AxochatSession {
-        val session = AxochatSession(maxFrameSize, malformed)
+        val session = AxochatSession(maxFrameSize, malformed, key)
         val request = Request.Builder().url(uri.toString()).build()
         session.open(http.newWebSocket(request, session.listener), timeout)
         return session

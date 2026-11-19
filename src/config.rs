@@ -257,7 +257,7 @@ pub struct ApiConfig {
     #[arg(long = "api-internal-url", env = "API_INTERNAL_URL", requires = "directory_token")]
     pub internal_url: Option<String>,
 
-    /// The Service API directory token, for roles and for accounts by uid and Minecraft account.
+    /// The Service API directory token, for roles, client names and accounts by uid and Minecraft account.
     #[arg(long = "api-directory-token", env = "API_DIRECTORY_TOKEN", hide_env_values = true, requires = "internal_url")]
     pub directory_token: Option<String>,
 }

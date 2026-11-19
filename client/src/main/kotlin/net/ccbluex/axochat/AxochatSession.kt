@@ -43,6 +43,7 @@ public sealed interface LoginResult {
 public class AxochatSession internal constructor(
     private val maxFrameSize: Int,
     private val malformed: (String) -> Unit,
+    private val key: String?,
 ) : AutoCloseable {
 
     private val job = Job()
@@ -148,7 +149,7 @@ public class AxochatSession internal constructor(
      * Older servers drop the `Hello`, so no answer within [timeout] means protocol 1.
      */
     public suspend fun negotiate(timeout: Duration = 3.seconds): Int {
-        val answer = request(Serverbound.Hello(PROTOCOL_VERSION), timeout) { it as? Clientbound.Hello }
+        val answer = request(Serverbound.Hello(PROTOCOL_VERSION, key), timeout) { it as? Clientbound.Hello }
         protocol = answer?.protocol?.coerceAtMost(PROTOCOL_VERSION) ?: 1
         return protocol
     }
