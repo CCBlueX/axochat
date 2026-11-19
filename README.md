@@ -21,4 +21,4 @@ Mutes from an old `banned.txt` move into the database with `axochat import-bans 
 
 ## Kotlin client
 `client/` is a Kotlin library for the protocol, published to `https://maven.ccbluex.net` as `net.ccbluex:axochat-client`.
-Snapshots come from `master`, releases from `client-v<version>` tags.
+Snapshots come from `main`, releases from `client-v<version>` tags.
