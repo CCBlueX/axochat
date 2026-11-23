@@ -83,6 +83,8 @@ The proof lasts until the session ends.
 - `{"type": "global"}` reaches everyone.
 - `{"type": "direct", "user": "..."}` is a direct message between two LiquidBounce Accounts.
   When sending, `user` is the id or the name of an account that is online.
+  The service account is the exception: a Minecraft login may write to it,
+  and it reaches any online user by id.
   The receiver gets the sender's id as `user`, and the sender's other connections after a handshake
   get the message with the receiver's id.
 
@@ -508,7 +510,8 @@ Banned users are logged out and cannot log in again; they get an `Error` with `B
 Sends `content` to a [channel](#channels), after a [handshake](#handshake).
 It must fit the validation scheme described at [Message](#message).
 
-- `{"type": "direct"}` needs a LiquidBounce Account, or the answer is `AccountRequired`.
+- `{"type": "direct"}` needs a LiquidBounce Account, or the answer is `AccountRequired`;
+  a Minecraft login may only write to the service account.
   `PrivateMessageNotAccepted` means the receiver is not an online account, or none of its connections allows messages.
 - An unknown `type` is answered with `UnknownChannel`.
 
@@ -570,7 +573,7 @@ or an [Error](#error): `LoginFailed` for an invalid token, `Banned` for a banned
 
 When the server has a service token configured (`SERVICE_TOKEN`), that token logs in as a staff
 account named after `SERVICE_NAME` instead, a staff login for tooling.
-IP bans do not apply to it.
+IP bans and the rate limit do not apply to it.
 
 **Example**
 ```json

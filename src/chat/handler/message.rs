@@ -54,12 +54,17 @@ impl ChatServer {
         match channel {
             Target::Global => self.handle_message(user_id, content, ctx),
             Target::Direct(receiver) => {
-                if self.online_user(user_id).is_some_and(|user| user.kind != UserKind::Account) {
+                let (account, service) = self
+                    .online_user(user_id)
+                    .map_or((true, false), |user| (user.kind == UserKind::Account, user.service));
+                let target = if service { self.find_receiver(&receiver) } else { self.find_account(&receiver) };
+                // a Minecraft login may only write to the service, which answers questions
+                let to_service = target.and_then(|id| self.users.get(&id)).is_some_and(|user| user.service);
+                if !account && !to_service {
                     self.send_error(user_id, ClientError::AccountRequired);
                     return;
                 }
                 let Some(sender) = self.check_message(user_id, &content) else { return };
-                let target = self.find_account(&receiver);
                 self.send_direct(user_id, sender, target, content);
             }
             Target::Unknown(channel) => self.send_error(user_id, ClientError::UnknownChannel(channel)),
@@ -76,6 +81,13 @@ impl ChatServer {
                 .find(|(_, user)| user.kind == UserKind::Account)
                 .map(|(id, _)| id)
         })
+    }
+
+    /// The service reaches any online user by id, also a Minecraft login it learned from a message;
+    /// by name it finds accounts only, like everyone else.
+    fn find_receiver(&self, user: &str) -> Option<Uuid> {
+        let by_id = Uuid::parse_str(user).ok().filter(|id| self.users.contains_key(id));
+        by_id.or_else(|| self.find_account(user))
     }
 
     fn send_global(&mut self, user_id: InternalId, sender: Sender, content: String, ctx: &mut Context<Self>) {
@@ -385,6 +397,10 @@ impl ChatServer {
             return false;
         };
         let Some(user) = self.users.get_mut(&stored_id) else { return false };
+        // the service answers many players at once, often with the same line
+        if user.service {
+            return false;
+        }
         if user.rate_limiter.check_new_message(message) {
             info!("User `{}` tried to send message, but was rate limited.", user_id);
             self.send_error(user_id, ClientError::RateLimited);
